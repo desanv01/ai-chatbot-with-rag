@@ -24,6 +24,20 @@ export default function UserPdfViewer({
   const [blobUrl, setBlobUrl] = useState('');
 
   useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+
+    const updateViewer = (nextBlobUrl: string, nextLoading: boolean) => {
+      // Defer the state update until after the effect completes. This keeps
+      // the blob conversion as an external synchronization without causing a
+      // synchronous cascading render.
+      queueMicrotask(() => {
+        if (!active) return;
+        setBlobUrl(nextBlobUrl);
+        setIsLoading(nextLoading);
+      });
+    };
+
     // Convert data URL to blob URL for better browser compatibility
     if (url.startsWith('data:application/pdf;base64,')) {
       try {
@@ -45,20 +59,21 @@ export default function UserPdfViewer({
 
         const blob = new Blob(byteArrays, { type: 'application/pdf' });
         const newBlobUrl = URL.createObjectURL(blob);
-        setBlobUrl(newBlobUrl);
-
-        // Clean up the blob URL when component unmounts
-        return () => {
-          URL.revokeObjectURL(newBlobUrl);
-        };
+        objectUrl = newBlobUrl;
+        updateViewer(newBlobUrl, true);
       } catch (error) {
         console.error('Error converting data URL to blob:', error);
-        setIsLoading(false);
+        updateViewer('', false);
       }
     } else {
       // If it's not a data URL, use it directly
-      setBlobUrl(url);
+      updateViewer(url, true);
     }
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
   }, [url]);
 
   return (

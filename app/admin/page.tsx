@@ -32,6 +32,12 @@ export const metadata: Metadata = {
   }
 };
 
+const WARNING_STYLES = Array.from({ length: 10 }, (_, index) => ({
+  left: `${(index * 37 + 11) % 100}%`,
+  top: `${(index * 61 + 7) % 100}%`,
+  animation: `float ${((index * 3) % 10) + 5}s ease-in-out infinite`
+}));
+
 export default function AdminPage() {
   return (
     <div className="min-h-[calc(100vh-44px)] md:min-h-[calc(100vh-44px)] flex flex-col bg-gradient-to-br from-[#ee7752] via-[#e73c7e] to-[#23a6d5] to-[#23d5ab] bg-[length:400%_400%] animate-gradient relative">
@@ -48,15 +54,11 @@ export default function AdminPage() {
         <div className="absolute inset-0 rounded-xl border-2 border-transparent animate-borderGlow pointer-events-none -z-10" />
 
         {/* Floating warnings */}
-        {[...Array(10)].map((_, i) => (
+        {WARNING_STYLES.map((style, i) => (
           <div
             key={i}
             className="absolute text-2xl text-destructive/40"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animation: `float ${Math.random() * 10 + 5}s ease-in-out infinite`
-            }}
+            style={style}
           >
             ⚠️
           </div>
