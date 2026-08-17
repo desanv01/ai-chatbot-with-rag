@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
+import {
+  CHAT_MODEL_OPTIONS,
+  DEFAULT_CHAT_MODEL,
+  type ChatModelOption
+} from '@/lib/model-config';
 
 export const dynamic = 'force-dynamic';
-
-type ModelOption = {
-  value: string;
-  label: string;
-  provider: 'openai' | 'anthropic' | 'google';
-  tier: 'free' | 'pro';
-};
 
 function envTrue(v: string | undefined) {
   return (v ?? '').toLowerCase() === 'true';
@@ -24,60 +22,22 @@ export async function GET() {
 
   const googleFreeOnly = envTrue(process.env.GOOGLE_FREE_TIER_ONLY);
 
-  // If you want even stricter rules, you can also require billing flags here.
-  // For now: freeOnly => hide Pro models.
-  const models: ModelOption[] = [];
+  const models: ChatModelOption[] = CHAT_MODEL_OPTIONS.filter((model) => {
+    const providerEnabled =
+      model.provider === 'openai'
+        ? hasOpenAI
+        : model.provider === 'anthropic'
+          ? hasAnthropic
+          : hasGoogle;
 
-  // --- OpenAI ---
-  if (hasOpenAI) {
-    models.push(
-      { value: 'gpt-5', label: 'GPT-5', provider: 'openai', tier: 'pro' },
-      { value: 'gpt-5-mini', label: 'GPT-5 Mini', provider: 'openai', tier: 'free' },
-      { value: 'o3', label: 'OpenAI O3', provider: 'openai', tier: 'pro' }
+    return (
+      providerEnabled &&
+      !(googleFreeOnly && model.provider === 'google' && model.tier === 'pro')
     );
-  }
+  });
 
-  // --- Anthropic ---
-  if (hasAnthropic) {
-    models.push({
-      value: 'claude-4-sonnet',
-      label: 'Claude 4.5 Sonnet',
-      provider: 'anthropic',
-      tier: 'pro'
-    });
-  }
-
-  // --- Google Gemini (IMPORTANT: use *preview ids* to avoid v1beta 404) ---
-  if (hasGoogle) {
-    // Flash is usually the safest for free tier
-    models.push({
-      value: 'gemini-3-flash-preview',
-      label: 'Gemini 3 Flash (Preview)',
-      provider: 'google',
-      tier: 'free'
-    });
-
-    // Optional: keep your 2.5 flash preview if you actually use it
-    models.push({
-      value: 'gemini-2.5-flash-preview-09-2025',
-      label: 'Gemini 2.5 Flash (Preview)',
-      provider: 'google',
-      tier: 'free'
-    });
-
-    // Pro hidden when GOOGLE_FREE_TIER_ONLY=true
-    if (!googleFreeOnly) {
-      models.push({
-        value: 'gemini-3-pro-preview',
-        label: 'Gemini 3 Pro (Preview)',
-        provider: 'google',
-        tier: 'pro'
-      });
-    }
-  }
-
-  // Choose default model (first available, else gpt-5 for UI stability)
-  const defaultModel = models[0]?.value ?? 'gpt-5';
+  // Choose the first configured model, else the shared stable fallback.
+  const defaultModel = models[0]?.value ?? DEFAULT_CHAT_MODEL;
 
   return NextResponse.json({
     defaultModel,

@@ -28,6 +28,7 @@ import {
 
 import { ChatHistoryButton } from './ChatHistoryButton';
 import Link from 'next/link';
+import { CHAT_MODEL_OPTIONS, type ChatModelOption } from '@/lib/model-config';
 
 type ChatHelpers = ReturnType<typeof useChat>;
 
@@ -40,18 +41,11 @@ interface MessageInputProps {
   stop: ChatHelpers['stop'];
 }
 
-type ModelOption = {
-  value: string;
-  label: string;
-  provider: 'openai' | 'anthropic' | 'google';
-  tier: 'free' | 'pro';
-};
-
 type ModelsApiResponse = {
   defaultModel: string;
   googleFreeOnly: boolean;
   providers: { openai: boolean; anthropic: boolean; google: boolean };
-  models: ModelOption[];
+  models: ChatModelOption[];
 };
 
 // FilePreview component stays the same
@@ -97,7 +91,10 @@ const FilePreview = React.memo(
           </div>
           <div className="absolute bottom-2 left-0 right-0 px-2.5 overflow-x-hidden overflow-y-visible">
             <div className="relative flex flex-row items-center gap-1 justify-between">
-              <div className="flex flex-row gap-1 shrink min-w-0" style={{ opacity: 1 }}>
+              <div
+                className="flex flex-row gap-1 shrink min-w-0"
+                style={{ opacity: 1 }}
+              >
                 <div className="min-w-0 overflow-hidden h-[18px] flex flex-row items-center justify-center gap-0.5 px-1 border-0.5 border-border-300/25 shadow-sm rounded bg-bg-000/70 backdrop-blur-sm font-medium">
                   <p className="uppercase truncate font-styrene text-text-300 text-[11px] leading-[13px] overflow-hidden">
                     pdf
@@ -137,14 +134,8 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const [input, setInput] = useState('');
 
   // ✅ Option B: fetch allowed models from server
-  const [modelOptions, setModelOptions] = useState<ModelOption[]>([
-    // fallback list (used only if /api/models fails)
-    { value: 'gpt-5', label: 'GPT-5', provider: 'openai', tier: 'pro' },
-    { value: 'gpt-5-mini', label: 'GPT-5 Mini', provider: 'openai', tier: 'free' },
-    { value: 'o3', label: 'OpenAI O3', provider: 'openai', tier: 'pro' },
-    { value: 'claude-4-sonnet', label: 'Claude 4.5 Sonnet', provider: 'anthropic', tier: 'pro' },
-    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)', provider: 'google', tier: 'free' },
-    { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Preview)', provider: 'google', tier: 'pro' }
+  const [modelOptions, setModelOptions] = useState<ChatModelOption[]>([
+    ...CHAT_MODEL_OPTIONS
   ]);
 
   useEffect(() => {
@@ -163,7 +154,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
           setModelOptions(serverModels);
 
           // If cookie contains an old/hidden model, auto-switch to server default
-          const allowed = new Set(serverModels.map((m) => m.value));
+          const allowed = new Set<string>(serverModels.map((m) => m.value));
           if (!allowed.has(selectedOption)) {
             handleOptionChange(data.defaultModel || serverModels[0].value);
           }
@@ -182,7 +173,10 @@ const MessageInput: React.FC<MessageInputProps> = ({
   }, []);
 
   const selectedLabel = useMemo(() => {
-    return modelOptions.find((o) => o.value === selectedOption)?.label ?? selectedOption;
+    return (
+      modelOptions.find((o) => o.value === selectedOption)?.label ??
+      selectedOption
+    );
   }, [modelOptions, selectedOption]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -198,7 +192,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
     }
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -244,7 +240,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
     e.preventDefault();
     if (!input.trim() && attachedFiles.length === 0) return;
 
-    const parts: UIMessagePart<ChatHelpers, UITools>[] = [{ type: 'text', text: input }];
+    const parts: UIMessagePart<ChatHelpers, UITools>[] = [
+      { type: 'text', text: input }
+    ];
 
     if (attachedFiles.length > 0) {
       const fileParts = await filesToBase64(attachedFiles);
@@ -291,7 +289,11 @@ const MessageInput: React.FC<MessageInputProps> = ({
           <div className="flex-1 ml-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-8 justify-between text-xs"
+                >
                   <span className="truncate">{selectedLabel}</span>
                   <ChevronDown className="h-3 w-3 ml-2 flex-shrink-0 opacity-70" />
                 </Button>
@@ -310,7 +312,8 @@ const MessageInput: React.FC<MessageInputProps> = ({
                   >
                     <span>{option.label}</span>
                     <span className="text-[10px] opacity-70 ml-3">
-                      {option.provider.toUpperCase()} • {option.tier.toUpperCase()}
+                      {option.provider.toUpperCase()} •{' '}
+                      {option.tier.toUpperCase()}
                     </span>
                   </DropdownMenuItem>
                 ))}
