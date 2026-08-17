@@ -9,10 +9,8 @@ import {
 import { voyage } from 'voyage-ai-provider';
 import type { TablesInsert } from '@/types/database';
 import { revalidatePath } from 'next/cache';
-import {
-  isUserStoragePath,
-  USER_FILES_BUCKET
-} from '@/lib/document-path';
+import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
+import { verifyDocumentJobToken } from '@/lib/server/document-job-token';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +26,10 @@ async function processFile(
   filePath: string,
   userId: string
 ) {
+  if (pages.length === 0) {
+    throw new Error('LlamaParse returned no document pages');
+  }
+
   let selectedDocuments = pages;
   if (pages.length > 19) {
     selectedDocuments = [...pages.slice(0, 10), ...pages.slice(-10)];
@@ -104,7 +106,10 @@ async function processFile(
       .remove([previousDocument.file_path]);
 
     if (oldFileError) {
-      console.warn('Could not remove the replaced document object:', oldFileError);
+      console.warn(
+        'Could not remove the replaced document object:',
+        oldFileError
+      );
     }
   }
 
@@ -112,6 +117,8 @@ async function processFile(
   const finalDocumentId = docData.id;
 
   // Now process each page chunk and create vector entries
+  const failedPages: number[] = [];
+
   for (let chunkIndex = 0; chunkIndex < pageChunks.length; chunkIndex++) {
     const batch = pageChunks[chunkIndex];
     let vectorBatchRecords: DocumentVectorRecord[] = [];
@@ -166,8 +173,11 @@ async function processFile(
               }
             });
 
-            if (!embedding) {
-              console.error('No embedding generated, skipping document');
+            if (!embedding || embedding.length !== 1024) {
+              console.error(
+                `Invalid embedding generated for page ${pageNumber}`
+              );
+              failedPages.push(pageNumber);
               return;
             }
 
@@ -182,6 +192,7 @@ async function processFile(
               `Error generating embedding for page ${pageNumber}:`,
               embedError
             );
+            failedPages.push(pageNumber);
           }
         } catch (error) {
           console.error(`Error processing document page: ${pageNumber}`, error);
@@ -202,7 +213,9 @@ async function processFile(
           });
 
         if (error) {
-          console.error('Error upserting vector batch to Supabase:', error);
+          throw new Error(
+            `Error upserting vector batch to Supabase: ${error.message}`
+          );
         }
       }
     } else {
@@ -211,6 +224,24 @@ async function processFile(
 
     // Clear batch records for next iteration
     vectorBatchRecords = [];
+  }
+
+  if (failedPages.length > 0) {
+    throw new Error(
+      `Document processing failed for ${failedPages.length} page(s)`
+    );
+  }
+
+  const { error: staleVectorError } = await supabase
+    .from('user_documents_vec')
+    .delete()
+    .eq('document_id', finalDocumentId)
+    .gt('page_number', totalPages);
+
+  if (staleVectorError) {
+    throw new Error(
+      `Failed to remove stale document vectors: ${staleVectorError.message}`
+    );
   }
 }
 
@@ -281,14 +312,19 @@ export async function POST(req: NextRequest) {
 
     const userId = session.sub;
 
-    const { jobId, fileName, filePath } = await req.json();
+    const { jobId, fileName, filePath, jobToken } = await req.json();
 
     if (
       typeof jobId !== 'string' ||
       !jobId.trim() ||
       typeof fileName !== 'string' ||
       !fileName.trim() ||
-      !isUserStoragePath(filePath, userId)
+      !isUserStoragePath(filePath, userId) ||
+      !verifyDocumentJobToken(jobToken, {
+        jobId,
+        userId,
+        filePath
+      })
     ) {
       return NextResponse.json(
         { error: 'Invalid document processing request' },
@@ -297,13 +333,16 @@ export async function POST(req: NextRequest) {
     }
 
     const markdownResponse = await fetch(
-      `https://api.cloud.llamaindex.ai/api/v1/parsing/job/${jobId}/result/markdown`,
+      `https://api.cloud.llamaindex.ai/api/v1/parsing/job/${encodeURIComponent(
+        jobId
+      )}/result/markdown`,
       {
         headers: {
           Authorization: `Bearer ${process.env.LLAMA_CLOUD_API_KEY}`,
           Accept: 'application/json'
         },
-        cache: 'no-store'
+        cache: 'no-store',
+        signal: AbortSignal.timeout(120_000)
       }
     );
 
@@ -313,10 +352,8 @@ export async function POST(req: NextRequest) {
         markdownResponse.statusText
       );
       return NextResponse.json(
-        {
-          error: `Failed to get Markdown result: ${markdownResponse.statusText}`
-        },
-        { status: 500 }
+        { error: 'Failed to get Markdown result' },
+        { status: 502 }
       );
     }
 
@@ -324,13 +361,30 @@ export async function POST(req: NextRequest) {
     const responseJson = await markdownResponse.json();
 
     // Extract the clean markdown content from the response
-    const markdownContent = responseJson.markdown as string;
+    const markdownContent: string =
+      responseJson && typeof responseJson.markdown === 'string'
+        ? responseJson.markdown
+        : '';
+
+    if (!markdownContent.trim()) {
+      return NextResponse.json(
+        { error: 'LlamaParse returned no markdown content' },
+        { status: 422 }
+      );
+    }
 
     // Use the correct page splitting pattern
     const pages = markdownContent
       .split('\n---\n')
       .map((page) => page.trim())
       .filter((page) => page !== '');
+
+    if (pages.length === 0) {
+      return NextResponse.json(
+        { error: 'LlamaParse returned no usable document pages' },
+        { status: 422 }
+      );
+    }
 
     await processFile(pages, fileName.trim(), filePath, userId);
     revalidatePath('/chat', 'layout');
