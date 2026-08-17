@@ -1,4 +1,4 @@
-import { tool } from 'ai';
+import { tool, zodSchema } from 'ai';
 import { z } from 'zod';
 import { embed } from 'ai';
 import { voyage } from 'voyage-ai-provider';
@@ -12,6 +12,34 @@ const MAX_CONTENT_CHARS = 40000; // ~10k tokens (approx)
 interface SearchUserDocumentProps {
   userId: string;
 }
+
+const searchUserDocumentInputSchema = z.object({
+  query: z
+    .string()
+    .describe('The search query to find relevant information in documents')
+});
+
+const searchUserDocumentOutputSchema = z.object({
+  instructions: z
+    .string()
+    .describe('Instructions for the AI on how to use the search results'),
+  context: z
+    .array(
+      z.object({
+        type: z.string(),
+        title: z.string(),
+        aiTitle: z.string().optional(),
+        page: z.number(),
+        totalPages: z.number().optional(),
+        content: z.string(),
+        pdfLink: z.string()
+      })
+    )
+    .describe('Array of document contexts found')
+});
+
+type SearchUserDocumentInput = z.infer<typeof searchUserDocumentInputSchema>;
+type SearchUserDocumentOutput = z.infer<typeof searchUserDocumentOutputSchema>;
 
 /**
  * Embed query function (Voyage)
@@ -101,32 +129,11 @@ async function querySupabaseVectors(
 }
 
 export const searchUserDocument = ({ userId }: SearchUserDocumentProps) =>
-  tool({
+  tool<SearchUserDocumentInput, SearchUserDocumentOutput>({
     description:
       "Search through the user's uploaded documents to find relevant information. Use this when the user asks about their documents, mentions an uploaded file, or the answer likely exists inside their PDFs.",
-    inputSchema: z.object({
-      query: z
-        .string()
-        .describe('The search query to find relevant information in documents')
-    }),
-    outputSchema: z.object({
-      instructions: z
-        .string()
-        .describe('Instructions for the AI on how to use the search results'),
-      context: z
-        .array(
-          z.object({
-            type: z.string(),
-            title: z.string(),
-            aiTitle: z.string().optional(),
-            page: z.number(),
-            totalPages: z.number().optional(),
-            content: z.string(),
-            pdfLink: z.string()
-          })
-        )
-        .describe('Array of document contexts found')
-    }),
+    inputSchema: zodSchema(searchUserDocumentInputSchema),
+    outputSchema: zodSchema(searchUserDocumentOutputSchema),
     execute: async ({ query }, { messages }) => {
       const documentIds = await getUserDocumentIds(userId);
 
