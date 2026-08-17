@@ -95,6 +95,7 @@ export function FileManager({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState('');
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [currentJobToken, setCurrentJobToken] = useState<string | null>(null);
   const [currentFileName, setCurrentFileName] = useState<string | null>(null);
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [shouldCheckStatus, setShouldCheckStatus] = useState(false);
@@ -111,9 +112,15 @@ export function FileManager({
   const resetUploadState = useCallback(() => {
     setShouldCheckStatus(false);
     setShouldProcessDoc(false);
-    mutate([`/api/checkdoc`, currentJobId], null, false);
+    mutate([`/api/checkdoc`, currentJobId, currentJobToken], null, false);
     mutate(
-      ['/api/processdoc', currentJobId, currentFilePath, currentFileName],
+      [
+        '/api/processdoc',
+        currentJobId,
+        currentJobToken,
+        currentFilePath,
+        currentFileName
+      ],
       null,
       false
     );
@@ -121,10 +128,11 @@ export function FileManager({
     setUploadProgress(0);
     setUploadStatus('');
     setCurrentJobId(null);
+    setCurrentJobToken(null);
     setCurrentFileName(null);
     setCurrentFilePath(null);
     setSelectedFile(null);
-  }, [currentJobId, currentFileName, currentFilePath]);
+  }, [currentJobId, currentJobToken, currentFileName, currentFilePath]);
 
   // Check if a document is selected based on URL
   const isDocSelected = (doc: UserDocument) => {
@@ -137,12 +145,14 @@ export function FileManager({
 
   // SWR for checking document processing status
   useSWR(
-    shouldCheckStatus && currentJobId ? [`/api/checkdoc`, currentJobId] : null,
-    async ([url, jobId]) => {
+    shouldCheckStatus && currentJobId && currentJobToken
+      ? [`/api/checkdoc`, currentJobId, currentJobToken]
+      : null,
+    async ([url, jobId, jobToken]) => {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId })
+        body: JSON.stringify({ jobId, jobToken })
       });
       if (!response.ok) throw new Error('Failed to fetch processing status');
       return response.json();
@@ -172,14 +182,24 @@ export function FileManager({
 
   // SWR for processing document
   useSWR(
-    shouldProcessDoc && currentJobId && currentFilePath && currentFileName
-      ? ['/api/processdoc', currentJobId, currentFilePath, currentFileName]
+    shouldProcessDoc &&
+    currentJobId &&
+    currentJobToken &&
+    currentFilePath &&
+    currentFileName
+      ? [
+          '/api/processdoc',
+          currentJobId,
+          currentJobToken,
+          currentFilePath,
+          currentFileName
+        ]
       : null,
-    async ([url, jobId, filePath, fileName]) => {
+    async ([url, jobId, jobToken, filePath, fileName]) => {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, fileName, filePath })
+        body: JSON.stringify({ jobId, jobToken, fileName, filePath })
       });
       if (!response.ok) throw new Error('Failed to process document');
       return response.json();
@@ -277,8 +297,9 @@ export function FileManager({
         setUploadProgress(50);
         setUploadStatus('Analyzing file...');
 
-        if (result.results?.[0]?.jobId) {
+        if (result.results?.[0]?.jobId && result.results?.[0]?.jobToken) {
           setCurrentJobId(result.results[0].jobId);
+          setCurrentJobToken(result.results[0].jobToken);
           setCurrentFilePath(uploadedFilePath);
 
           // Keep ORIGINAL name here (usually used just for tracking/display)
@@ -286,7 +307,7 @@ export function FileManager({
 
           setShouldCheckStatus(true);
         } else {
-          throw new Error('No job ID received');
+          throw new Error('No signed processing job received');
         }
       } catch (error) {
         console.error('Upload error:', error);
