@@ -1,5 +1,10 @@
 // app/api/getmetadata/route.ts
 import { type NextRequest, NextResponse } from 'next/server';
+import { getSession } from '@/lib/server/supabase';
+import { fetchSafeUrl, SafeProxyError } from '@/lib/server/safe-proxy';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // Extract content using regex instead of cheerio
 function extractMetaContent(html: string, pattern: RegExp): string {
@@ -19,13 +24,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Extract base URL
-    const baseUrl = new URL(url).origin;
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    const response = await fetch(url, {
+    const result = await fetchSafeUrl(url, {
+      maxBytes: 2 * 1024 * 1024,
+      timeoutMs: 8_000,
       headers: {
-        Referer: baseUrl,
-        Origin: baseUrl,
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         Accept:
@@ -33,11 +40,7 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch content: ${response.statusText}`);
-    }
-
-    const content = await response.text();
+    const content = new TextDecoder().decode(result.body);
 
     // Extract title using regex
     let title = extractMetaContent(content, /<title[^>]*>(.*?)<\/title>/i);
@@ -64,17 +67,19 @@ export async function GET(request: NextRequest) {
       {
         title,
         description,
-        url
+        url: result.url.toString()
       },
       {
         headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=3600, must-revalidate'
+          'Cache-Control': 'private, no-store'
         }
       }
     );
   } catch (error) {
     console.error('Metadata extraction error:', error);
+    if (error instanceof SafeProxyError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json(
       { error: 'Failed to extract metadata' },
       { status: 500 }
