@@ -12,6 +12,9 @@
 -- Enable UUID generation
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
 
+-- gen_random_uuid() is used by the application tables below
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA extensions;
+
 -- Enable vector extension for document embeddings
 -- Note: PostgreSQL does not support indexing vectors with more than 2,000 dimensions
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
@@ -21,33 +24,40 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.users (
-  id uuid REFERENCES auth.users NOT NULL PRIMARY KEY,
-  full_name text,
-  email text
+  id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL PRIMARY KEY,
+  full_name text NULL,
+  email text NULL,
+  role text NOT NULL DEFAULT 'user',
+  stripe_customer_id text NULL
 );
 
 -- Enable Row Level Security
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for users table
+DROP POLICY IF EXISTS "Users can insert own data" ON public.users;
 CREATE POLICY "Users can insert own data"
 ON public.users
-FOR INSERT
-TO public
+FOR INSERT TO authenticated
 WITH CHECK (id = (SELECT auth.uid()));
 
+DROP POLICY IF EXISTS "Users can update own data" ON public.users;
 CREATE POLICY "Users can update own data"
 ON public.users
-FOR UPDATE
-TO public
+FOR UPDATE TO authenticated
 USING (id = (SELECT auth.uid()))
 WITH CHECK (id = (SELECT auth.uid()));
 
+DROP POLICY IF EXISTS "Users can view own data" ON public.users;
 CREATE POLICY "Users can view own data"
 ON public.users
-FOR SELECT
-TO public
+FOR SELECT TO authenticated
 USING (id = (SELECT auth.uid()));
+
+-- Profile users may edit only their profile fields. Role and Stripe identity
+-- remain service-role-managed columns.
+REVOKE UPDATE ON public.users FROM authenticated;
+GRANT UPDATE (full_name, email) ON public.users TO authenticated;
 
 -- =============================================================================
 -- STEP 3: CREATE TRIGGER FOR NEW USER REGISTRATION
@@ -68,16 +78,48 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Trigger to execute function on new auth user
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
 
 -- =============================================================================
--- STEP 4: CREATE CHAT SESSIONS TABLE
+-- STEP 4: CREATE SUBSCRIPTIONS TABLE
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS public.subscriptions (
+  id uuid NOT NULL DEFAULT extensions.gen_random_uuid(),
+  user_id uuid NOT NULL,
+  name text NULL,
+  status text NOT NULL,
+  stripe_subscription_id text NOT NULL,
+  stripe_price_id text NOT NULL,
+  stripe_current_period_end timestamp with time zone NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT subscriptions_pkey PRIMARY KEY (id),
+  CONSTRAINT subscriptions_user_id_key UNIQUE (user_id),
+  CONSTRAINT fk_subscriptions_user FOREIGN KEY (user_id)
+    REFERENCES users (id) ON DELETE CASCADE
+) TABLESPACE pg_default;
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id
+  ON public.subscriptions USING btree (user_id) TABLESPACE pg_default;
+
+ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own subscription" ON public.subscriptions;
+CREATE POLICY "Users can view own subscription"
+ON public.subscriptions
+FOR SELECT TO authenticated
+USING (user_id = (SELECT auth.uid()));
+
+-- =============================================================================
+-- STEP 5: CREATE CHAT SESSIONS TABLE
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.chat_sessions (
-  id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
+  id uuid NOT NULL DEFAULT extensions.gen_random_uuid(),
   user_id uuid NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -96,21 +138,22 @@ CREATE INDEX IF NOT EXISTS chat_sessions_created_at_idx
 ALTER TABLE public.chat_sessions ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policy for chat_sessions
+DROP POLICY IF EXISTS "Users can view own chat sessions" ON public.chat_sessions;
 CREATE POLICY "Users can view own chat sessions"
 ON public.chat_sessions
 AS PERMISSIVE
-FOR ALL
-TO public
-USING (user_id = (SELECT auth.uid()));
+FOR ALL TO authenticated
+USING (user_id = (SELECT auth.uid()))
+WITH CHECK (user_id = (SELECT auth.uid()));
 
 -- =============================================================================
--- STEP 5: CREATE MESSAGE PARTS TABLE (Incremental Message Saving)
+-- STEP 6: CREATE MESSAGE PARTS TABLE (Incremental Message Saving)
 -- =============================================================================
 -- This table stores individual message parts (text, tools, reasoning, etc.)
 -- allowing for incremental saving and proper ordering of AI responses
 
 CREATE TABLE IF NOT EXISTS public.message_parts (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  id uuid NOT NULL DEFAULT extensions.gen_random_uuid(),
   chat_session_id uuid NOT NULL,
   message_id uuid NOT NULL,
   role text NOT NULL,
@@ -190,12 +233,19 @@ CREATE INDEX IF NOT EXISTS idx_message_parts_message_order
 ALTER TABLE public.message_parts ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policy for message_parts
+DROP POLICY IF EXISTS "Users can view messages from their sessions" ON public.message_parts;
 CREATE POLICY "Users can view messages from their sessions"
 ON public.message_parts
 AS PERMISSIVE
-FOR ALL
-TO public
+FOR ALL TO authenticated
 USING (
+  chat_session_id IN (
+    SELECT chat_sessions.id
+    FROM chat_sessions
+    WHERE chat_sessions.user_id = (SELECT auth.uid())
+  )
+)
+WITH CHECK (
   chat_session_id IN (
     SELECT chat_sessions.id
     FROM chat_sessions
@@ -204,11 +254,11 @@ USING (
 );
 
 -- =============================================================================
--- STEP 6: CREATE USER DOCUMENTS TABLE (Document Metadata)
+-- STEP 7: CREATE USER DOCUMENTS TABLE (Document Metadata)
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.user_documents (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  id uuid NOT NULL DEFAULT extensions.gen_random_uuid(),
   user_id uuid NOT NULL,
   title text NOT NULL,
   total_pages integer NOT NULL,
@@ -232,18 +282,19 @@ CREATE INDEX IF NOT EXISTS idx_user_documents_user_id
 ALTER TABLE public.user_documents ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policy for user_documents
+DROP POLICY IF EXISTS "Users can only access their own documents" ON public.user_documents;
 CREATE POLICY "Users can only access their own documents"
 ON public.user_documents
-FOR ALL
-TO public
-USING ((SELECT auth.uid()) = user_id);
+FOR ALL TO authenticated
+USING ((SELECT auth.uid()) = user_id)
+WITH CHECK ((SELECT auth.uid()) = user_id);
 
 -- =============================================================================
--- STEP 7: CREATE USER DOCUMENTS VECTORS TABLE (Document Embeddings)
+-- STEP 8: CREATE USER DOCUMENTS VECTORS TABLE (Document Embeddings)
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.user_documents_vec (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  id uuid NOT NULL DEFAULT extensions.gen_random_uuid(),
   document_id uuid NOT NULL,
   text_content text NOT NULL,
   page_number integer NOT NULL,
@@ -270,11 +321,18 @@ CREATE INDEX IF NOT EXISTS user_documents_vec_embedding_idx
 ALTER TABLE public.user_documents_vec ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policy for user_documents_vec
+DROP POLICY IF EXISTS "Users can only access their own document vectors" ON public.user_documents_vec;
 CREATE POLICY "Users can only access their own document vectors"
 ON public.user_documents_vec
-FOR ALL
-TO public
+FOR ALL TO authenticated
 USING (
+  EXISTS (
+    SELECT 1 FROM user_documents
+    WHERE user_documents.id = user_documents_vec.document_id
+    AND user_documents.user_id = (SELECT auth.uid())
+  )
+)
+WITH CHECK (
   EXISTS (
     SELECT 1 FROM user_documents
     WHERE user_documents.id = user_documents_vec.document_id
@@ -283,13 +341,13 @@ USING (
 );
 
 -- =============================================================================
--- STEP 8: CREATE SIMILARITY SEARCH FUNCTION
+-- STEP 9: CREATE SIMILARITY SEARCH FUNCTION
 -- =============================================================================
 -- This function performs vector similarity search across user documents
 -- Used by the autonomous document search tool
 
-CREATE OR REPLACE FUNCTION match_documents(
-  query_embedding vector(1024),
+CREATE OR REPLACE FUNCTION public.match_documents(
+  query_embedding extensions.vector(1024),
   match_count int,
   filter_user_id uuid,
   file_ids uuid[],
@@ -297,8 +355,10 @@ CREATE OR REPLACE FUNCTION match_documents(
 )
 RETURNS TABLE (
   id uuid,
+  document_id uuid,
   text_content text,
   title text,
+  file_path text,
   doc_timestamp timestamp with time zone,
   ai_title text,
   ai_description text,
@@ -309,13 +369,17 @@ RETURNS TABLE (
   similarity float
 )
 LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, extensions
 AS $$
 BEGIN
   RETURN QUERY
   SELECT
     vec.id,
+    doc.id as document_id,
     vec.text_content,
     doc.title,
+    doc.file_path,
     doc.created_at as doc_timestamp,
     doc.ai_title,
     doc.ai_description,
@@ -330,6 +394,7 @@ BEGIN
     user_documents doc ON vec.document_id = doc.id
   WHERE
     doc.user_id = filter_user_id
+    AND doc.user_id = (SELECT auth.uid())
     AND doc.id = ANY(file_ids)
     AND 1 - (vec.embedding <=> query_embedding) > similarity_threshold
   ORDER BY
@@ -338,39 +403,62 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION public.match_documents(
+  extensions.vector,
+  integer,
+  uuid,
+  uuid[],
+  double precision
+) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.match_documents(
+  extensions.vector,
+  integer,
+  uuid,
+  uuid[],
+  double precision
+) TO authenticated, service_role;
+
 -- =============================================================================
--- STEP 9: STORAGE BUCKET SETUP
+-- STEP 10: STORAGE BUCKET SETUP
 -- =============================================================================
 -- Note: Create a storage bucket named 'userfiles' in the Supabase dashboard first
 -- Then run these policies:
 
 -- Policy 1: Allow users to select their own files
+DROP POLICY IF EXISTS "User can select own files" ON storage.objects;
 CREATE POLICY "User can select own files"
-ON storage.objects FOR SELECT
+ON storage.objects FOR SELECT TO authenticated
 USING (
   (bucket_id = 'userfiles'::text) AND
   ((auth.uid())::text = (storage.foldername(name))[1])
 );
 
 -- Policy 2: Allow users to insert their own files
+DROP POLICY IF EXISTS "User can insert own files" ON storage.objects;
 CREATE POLICY "User can insert own files"
-ON storage.objects FOR INSERT
+ON storage.objects FOR INSERT TO authenticated
 WITH CHECK (
   (bucket_id = 'userfiles'::text) AND
   ((auth.uid())::text = (storage.foldername(name))[1])
 );
 
 -- Policy 3: Allow users to update their own files
+DROP POLICY IF EXISTS "User can update own files" ON storage.objects;
 CREATE POLICY "User can update own files"
-ON storage.objects FOR UPDATE
+ON storage.objects FOR UPDATE TO authenticated
 USING (
+  (bucket_id = 'userfiles'::text) AND
+  ((auth.uid())::text = (storage.foldername(name))[1])
+)
+WITH CHECK (
   (bucket_id = 'userfiles'::text) AND
   ((auth.uid())::text = (storage.foldername(name))[1])
 );
 
 -- Policy 4: Allow users to delete their own files
+DROP POLICY IF EXISTS "User can delete own files" ON storage.objects;
 CREATE POLICY "User can delete own files"
-ON storage.objects FOR DELETE
+ON storage.objects FOR DELETE TO authenticated
 USING (
   (bucket_id = 'userfiles'::text) AND
   ((auth.uid())::text = (storage.foldername(name))[1])

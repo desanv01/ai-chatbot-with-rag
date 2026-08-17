@@ -278,6 +278,7 @@ export type Database = {
           id: string;
           title: string;
           total_pages: number;
+          updated_at: string | null;
           user_id: string;
         };
         Insert: {
@@ -290,6 +291,7 @@ export type Database = {
           id?: string;
           title: string;
           total_pages: number;
+          updated_at?: string | null;
           user_id: string;
         };
         Update: {
@@ -302,6 +304,7 @@ export type Database = {
           id?: string;
           title?: string;
           total_pages?: number;
+          updated_at?: string | null;
           user_id?: string;
         };
         Relationships: [
@@ -348,27 +351,35 @@ export type Database = {
       };
       users: {
         Row: {
-          email: string;
-          full_name: string;
+          email: string | null;
+          full_name: string | null;
           id: string;
           role: string;
           stripe_customer_id: string | null;
         };
         Insert: {
-          email: string;
-          full_name?: string;
+          email?: string | null;
+          full_name?: string | null;
           id: string;
           role?: string;
           stripe_customer_id?: string | null;
         };
         Update: {
-          email?: string;
-          full_name?: string;
+          email?: string | null;
+          full_name?: string | null;
           id?: string;
           role?: string;
           stripe_customer_id?: string | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'fk_subscriptions_user';
+            columns: ['id'];
+            isOneToOne: true;
+            referencedRelation: 'subscriptions';
+            referencedColumns: ['user_id'];
+          }
+        ];
       };
     };
     Views: {
@@ -389,6 +400,8 @@ export type Database = {
           ai_maintopics: string[];
           ai_title: string;
           doc_timestamp: string;
+          document_id: string;
+          file_path: string;
           id: string;
           page_number: number;
           similarity: number;

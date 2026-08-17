@@ -2,8 +2,18 @@ import 'server-only';
 import { createServerSupabaseClient } from '@/lib/server/server';
 import type { UIMessage } from 'ai';
 import type { TablesInsert } from '@/types/database';
+import { v5 as uuidv5 } from 'uuid';
 
 type PartsInsert = TablesInsert<'message_parts'>;
+
+const DATABASE_UUID_NAMESPACE = 'f6f4cb2e-9f44-4ca6-b1a9-6b8cb1d2a4d9';
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function toDatabaseUuid(value: string | undefined): string {
+  if (value && UUID_PATTERN.test(value)) return value;
+  return uuidv5(value || crypto.randomUUID(), DATABASE_UUID_NAMESPACE);
+}
 
 // Helper function to sanitize data for Postgres
 const sanitizeForPostgres = (value: any): any => {
@@ -81,8 +91,8 @@ export const saveMessagesToDB = async ({
       // For assistant messages in incremental saves, use the provided assistantMessageId
       const messageId =
         message.role === 'assistant' && assistantMessageId
-          ? assistantMessageId
-          : message.id;
+          ? toDatabaseUuid(assistantMessageId)
+          : toDatabaseUuid(message.id);
       const role = message.role;
 
       // Skip user messages if not first step (they're already saved)
@@ -185,11 +195,7 @@ export const saveMessagesToDB = async ({
           case 'tool-searchUserDocument': {
             const toolPart = part;
             // Generate a deterministic UUID from the toolCallId string
-            const toolCallUuid =
-              toolPart.toolCallId?.includes('-') &&
-              toolPart.toolCallId.length === 36
-                ? toolPart.toolCallId
-                : crypto.randomUUID();
+            const toolCallUuid = toDatabaseUuid(toolPart.toolCallId);
 
             allParts.push({
               ...basePart,
@@ -215,7 +221,9 @@ export const saveMessagesToDB = async ({
             allParts.push({
               ...basePart,
               type: 'tool-websiteSearchTool',
-              tool_websitesearchtool_toolcallid: toolPart.toolCallId,
+              tool_websitesearchtool_toolcallid: toDatabaseUuid(
+                toolPart.toolCallId
+              ),
               tool_websitesearchtool_state: toolPart.state,
               tool_websitesearchtool_input: sanitizeForPostgres(toolPart.input),
               tool_websitesearchtool_output: sanitizeForPostgres(
