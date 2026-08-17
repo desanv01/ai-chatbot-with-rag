@@ -1,8 +1,9 @@
 // app/api/upload/cleanup/route.ts
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/client/client';
+import { createAdminClient } from '@/lib/server/admin';
 import { getSession } from '@/lib/server/supabase';
+import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,14 +17,14 @@ export async function POST(request: NextRequest) {
     const userId = session.sub;
 
     // Verify the file path belongs to this user
-    if (!filePath.startsWith(`${userId}/`)) {
+    if (!isUserStoragePath(filePath, userId)) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
     }
 
-    const supabase = createClient();
+    const supabase = createAdminClient();
 
     const { error } = await supabase.storage
-      .from('userfiles')
+      .from(USER_FILES_BUCKET)
       .remove([filePath]);
 
     if (error) {

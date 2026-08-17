@@ -9,6 +9,10 @@ import {
 import { voyage } from 'voyage-ai-provider';
 import type { TablesInsert } from '@/types/database';
 import { revalidatePath } from 'next/cache';
+import {
+  isUserStoragePath,
+  USER_FILES_BUCKET
+} from '@/lib/document-path';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +22,12 @@ const embeddingModel = voyage('voyage-3-large');
 
 type DocumentVectorRecord = TablesInsert<'user_documents_vec'>;
 
-async function processFile(pages: string[], fileName: string, userId: string) {
+async function processFile(
+  pages: string[],
+  fileName: string,
+  filePath: string,
+  userId: string
+) {
   let selectedDocuments = pages;
   if (pages.length > 19) {
     selectedDocuments = [...pages.slice(0, 10), ...pages.slice(-10)];
@@ -44,6 +53,20 @@ async function processFile(pages: string[], fileName: string, userId: string) {
 
   const supabase = createAdminClient();
 
+  const { data: previousDocument, error: previousDocumentError } =
+    await supabase
+      .from('user_documents')
+      .select('id, file_path')
+      .eq('user_id', userId)
+      .eq('title', fileName.trim())
+      .maybeSingle();
+
+  if (previousDocumentError) {
+    throw new Error(
+      `Failed to inspect existing document: ${previousDocumentError.message}`
+    );
+  }
+
   // Upsert the document metadata
   const { error: docError, data: docData } = await supabase
     .from('user_documents')
@@ -56,7 +79,7 @@ async function processFile(pages: string[], fileName: string, userId: string) {
         ai_maintopics: output.mainTopics,
         ai_keyentities: output.keyEntities,
         total_pages: totalPages,
-        file_path: `${userId}/${fileName}`,
+        file_path: filePath,
         created_at: new Date().toISOString()
       },
       {
@@ -69,6 +92,20 @@ async function processFile(pages: string[], fileName: string, userId: string) {
   if (docError) {
     console.error('Error upserting document metadata:', docError);
     throw new Error(`Failed to create document record: ${docError.message}`);
+  }
+
+  if (
+    previousDocument &&
+    previousDocument.file_path !== filePath &&
+    isUserStoragePath(previousDocument.file_path, userId)
+  ) {
+    const { error: oldFileError } = await supabase.storage
+      .from(USER_FILES_BUCKET)
+      .remove([previousDocument.file_path]);
+
+    if (oldFileError) {
+      console.warn('Could not remove the replaced document object:', oldFileError);
+    }
   }
 
   // Get the document ID (either from upsert response or the generated UUID)
@@ -244,7 +281,20 @@ export async function POST(req: NextRequest) {
 
     const userId = session.sub;
 
-    const { jobId, fileName } = await req.json();
+    const { jobId, fileName, filePath } = await req.json();
+
+    if (
+      typeof jobId !== 'string' ||
+      !jobId.trim() ||
+      typeof fileName !== 'string' ||
+      !fileName.trim() ||
+      !isUserStoragePath(filePath, userId)
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid document processing request' },
+        { status: 400 }
+      );
+    }
 
     const markdownResponse = await fetch(
       `https://api.cloud.llamaindex.ai/api/v1/parsing/job/${jobId}/result/markdown`,
@@ -282,7 +332,7 @@ export async function POST(req: NextRequest) {
       .map((page) => page.trim())
       .filter((page) => page !== '');
 
-    await processFile(pages, fileName, userId);
+    await processFile(pages, fileName.trim(), filePath, userId);
     revalidatePath('/chat', 'layout');
     return NextResponse.json({ status: 'SUCCESS' });
   } catch (error) {

@@ -40,8 +40,8 @@ import {
   PaginationPrevious
 } from '@/components/ui/pagination';
 
-function getDocUrl(title: string): string {
-  const encoded = encodeBase64(title);
+function getDocUrl(documentId: string): string {
+  const encoded = encodeBase64(documentId);
   return `/filer?doc=${encodeURIComponent(encoded)}`;
 }
 
@@ -65,21 +65,6 @@ const SUPPORTED_FILE_TYPES: { [key: string]: string[] } = {
   'application/pdf': ['.pdf', '.PDF']
 };
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
-
-/**
- * Create a unique prefix for filenames.
- * Uses crypto.randomUUID() when available, otherwise falls back to timestamp+random.
- */
-function makeUniquePrefix(): string {
-  try {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-  } catch {
-    // ignore
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
 
 export function FileManager({
   documents,
@@ -111,6 +96,7 @@ export function FileManager({
   const [uploadStatus, setUploadStatus] = useState('');
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [currentFileName, setCurrentFileName] = useState<string | null>(null);
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [shouldCheckStatus, setShouldCheckStatus] = useState(false);
   const [shouldProcessDoc, setShouldProcessDoc] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -126,20 +112,27 @@ export function FileManager({
     setShouldCheckStatus(false);
     setShouldProcessDoc(false);
     mutate([`/api/checkdoc`, currentJobId], null, false);
-    mutate(['/api/processdoc', currentJobId, currentFileName], null, false);
+    mutate(
+      ['/api/processdoc', currentJobId, currentFilePath, currentFileName],
+      null,
+      false
+    );
     setIsUploading(false);
     setUploadProgress(0);
     setUploadStatus('');
     setCurrentJobId(null);
     setCurrentFileName(null);
+    setCurrentFilePath(null);
     setSelectedFile(null);
-  }, [currentJobId, currentFileName]);
+  }, [currentJobId, currentFileName, currentFilePath]);
 
   // Check if a document is selected based on URL
   const isDocSelected = (doc: UserDocument) => {
     if (!selectedDocFileName) return false;
-    const encoded = encodeBase64(doc.title);
-    return encoded === selectedDocFileName;
+    return (
+      encodeBase64(doc.id) === selectedDocFileName ||
+      encodeBase64(doc.title) === selectedDocFileName
+    );
   };
 
   // SWR for checking document processing status
@@ -179,14 +172,14 @@ export function FileManager({
 
   // SWR for processing document
   useSWR(
-    shouldProcessDoc && currentJobId && currentFileName
-      ? ['/api/processdoc', currentJobId, currentFileName]
+    shouldProcessDoc && currentJobId && currentFilePath && currentFileName
+      ? ['/api/processdoc', currentJobId, currentFilePath, currentFileName]
       : null,
-    async ([url, jobId, fileName]) => {
+    async ([url, jobId, filePath, fileName]) => {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, fileName })
+        body: JSON.stringify({ jobId, fileName, filePath })
       });
       if (!response.ok) throw new Error('Failed to process document');
       return response.json();
@@ -223,16 +216,11 @@ export function FileManager({
         // Original name used for display/title in your app
         const originalFileName = file.name.trim();
 
-        // Unique name used ONLY for storage path generation (prevents collisions)
-        const uniquePrefix = makeUniquePrefix();
-        const storageFileName = `${uniquePrefix}-${originalFileName}`;
-
         const presignedResponse = await fetch('/api/upload/presigned-url', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            // IMPORTANT: use unique storage name here so repeated uploads never collide
-            fileName: storageFileName,
+            fileName: originalFileName,
             fileSize: file.size,
             fileType: file.type
           })
@@ -291,6 +279,7 @@ export function FileManager({
 
         if (result.results?.[0]?.jobId) {
           setCurrentJobId(result.results[0].jobId);
+          setCurrentFilePath(uploadedFilePath);
 
           // Keep ORIGINAL name here (usually used just for tracking/display)
           setCurrentFileName(originalFileName);
@@ -364,13 +353,12 @@ export function FileManager({
   };
 
   const handleConfirmDelete = async () => {
-    if (!documentToDelete || !documentToDelete.file_path) return;
+    if (!documentToDelete) return;
 
     setDeletingId(documentToDelete.id);
     setDeleteDialogOpen(false);
 
     const formData = new FormData();
-    formData.append('file_path', documentToDelete.file_path);
     formData.append('file_id', documentToDelete.id);
 
     const result = await deleteUserFile(formData);
@@ -471,7 +459,7 @@ export function FileManager({
               {paginatedDocuments.map((doc) => {
                 const isSelected = isDocSelected(doc);
                 const isDeleting = deletingId === doc.id;
-                const docUrl = getDocUrl(doc.title);
+                const docUrl = getDocUrl(doc.id);
                 const timeAgo = formatDistanceToNow(new Date(doc.created_at), {
                   addSuffix: true,
                   locale: enUS

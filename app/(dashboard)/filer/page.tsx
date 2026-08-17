@@ -7,26 +7,33 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { getSession } from '@/lib/server/supabase';
 import { createAdminClient } from '@/lib/server/admin';
-import { decodeBase64 } from '@/utils/base64';
+import { encodeBase64 } from '@/utils/base64';
+import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
 import { Loader } from 'lucide-react';
 
-async function DocumentPreview({ encodedTitle }: { encodedTitle: string }) {
+type DocumentSummary = {
+  id: string;
+  title: string;
+  file_path: string | null;
+};
+
+async function DocumentPreview({
+  document
+}: {
+  document: DocumentSummary;
+}) {
   const session = await getSession();
   const userId = session?.sub;
 
   let signedUrl: string | null = null;
-  let decodedTitle: string | null = null;
 
-  if (userId && encodedTitle) {
+  if (userId && isUserStoragePath(document.file_path, userId)) {
     try {
       const supabase = createAdminClient();
-      // The file is stored as userId/base64EncodedTitle
-      const filePath = `${userId}/${encodedTitle}`;
-      decodedTitle = decodeBase64(encodedTitle);
 
       const { data, error } = await supabase.storage
-        .from('userfiles')
-        .createSignedUrl(filePath, 3600);
+        .from(USER_FILES_BUCKET)
+        .createSignedUrl(document.file_path, 3600);
 
       if (!error && data) {
         signedUrl = data.signedUrl;
@@ -36,7 +43,7 @@ async function DocumentPreview({ encodedTitle }: { encodedTitle: string }) {
     }
   }
 
-  return <DocumentViewer fileName={decodedTitle} signedUrl={signedUrl} />;
+  return <DocumentViewer fileName={document.title} signedUrl={signedUrl} />;
 }
 
 function PreviewLoading() {
@@ -73,6 +80,13 @@ export default async function FilerPage({ searchParams }: PageProps) {
   }
 
   const selectedDoc = params.doc || null;
+  const selectedDocument = selectedDoc
+    ? data.userDocuments.find(
+        (document) =>
+          encodeBase64(document.id) === selectedDoc ||
+          encodeBase64(document.title) === selectedDoc
+      ) ?? null
+    : null;
   const currentPage = Math.max(1, parseInt(params.page || '1', 10) || 1);
 
   return (
@@ -83,9 +97,9 @@ export default async function FilerPage({ searchParams }: PageProps) {
         currentPage={currentPage}
       />
 
-      {selectedDoc ? (
+      {selectedDocument ? (
         <Suspense fallback={<PreviewLoading />}>
-          <DocumentPreview encodedTitle={selectedDoc} />
+          <DocumentPreview document={selectedDocument} />
         </Suspense>
       ) : (
         <DocumentViewer fileName={null} signedUrl={null} />

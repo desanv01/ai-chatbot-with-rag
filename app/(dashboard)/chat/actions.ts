@@ -8,6 +8,7 @@ import { refresh } from 'next/cache';
 import { cookies } from 'next/headers';
 import { isToday, isYesterday, subDays } from 'date-fns';
 import { TZDate } from '@date-fns/tz';
+import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
 
 export interface ChatPreview {
   id: string;
@@ -171,8 +172,7 @@ export async function deleteChatData(chatId: string) {
 }
 
 const deleteFileSchema = z.object({
-  file_name: z.string(),
-  file_id: z.string()
+  file_id: z.uuid()
 });
 
 export async function deleteFilterTagAndDocumentChunks(formData: FormData) {
@@ -182,7 +182,6 @@ export async function deleteFilterTagAndDocumentChunks(formData: FormData) {
   }
   try {
     const result = deleteFileSchema.safeParse({
-      file_name: formData.get('file_name'),
       file_id: formData.get('file_id')
     });
 
@@ -194,16 +193,37 @@ export async function deleteFilterTagAndDocumentChunks(formData: FormData) {
       };
     }
 
-    const { file_name, file_id } = result.data;
+    const { file_id } = result.data;
     const userId = session.sub;
 
-    // Delete the file from storage
     const supabase = await createServerSupabaseClient();
-    const fileToDelete = userId + '/' + file_name;
+
+    const { data: document, error: documentError } = await supabase
+      .from('user_documents')
+      .select('id, file_path')
+      .eq('user_id', userId)
+      .eq('id', file_id)
+      .maybeSingle();
+
+    if (documentError || !document) {
+      console.error('Error finding document to delete:', documentError);
+      return {
+        success: false,
+        message: 'Document not found'
+      };
+    }
+
+    if (!isUserStoragePath(document.file_path, userId)) {
+      console.error('Document has an invalid Storage path:', document.file_path);
+      return {
+        success: false,
+        message: 'Document Storage path is invalid'
+      };
+    }
 
     const { error: deleteError } = await supabase.storage
-      .from('userfiles')
-      .remove([fileToDelete]);
+      .from(USER_FILES_BUCKET)
+      .remove([document.file_path]);
 
     if (deleteError) {
       console.error('Error deleting file from Supabase storage:', deleteError);
