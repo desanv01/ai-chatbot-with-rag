@@ -4,10 +4,10 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { getSession } from '@/lib/server/supabase';
 import { createServerSupabaseClient } from '@/lib/server/server';
+import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
 
 const deleteFileSchema = z.object({
-  file_path: z.string(),
-  file_id: z.string()
+  file_id: z.uuid()
 });
 
 export async function deleteUserFile(formData: FormData) {
@@ -17,7 +17,6 @@ export async function deleteUserFile(formData: FormData) {
   }
 
   const result = deleteFileSchema.safeParse({
-    file_path: formData.get('file_path'),
     file_id: formData.get('file_id')
   });
 
@@ -28,16 +27,39 @@ export async function deleteUserFile(formData: FormData) {
     };
   }
 
-  const { file_path, file_id } = result.data;
+  const { file_id } = result.data;
   const userId = session.sub;
 
   try {
     const supabase = await createServerSupabaseClient();
 
-    // Delete the file from storage
+    const { data: document, error: documentError } = await supabase
+      .from('user_documents')
+      .select('id, file_path')
+      .eq('user_id', userId)
+      .eq('id', file_id)
+      .maybeSingle();
+
+    if (documentError || !document) {
+      console.error('Error finding document to delete:', documentError);
+      return {
+        success: false,
+        message: 'Document not found'
+      };
+    }
+
+    if (!isUserStoragePath(document.file_path, userId)) {
+      console.error('Document has an invalid Storage path:', document.file_path);
+      return {
+        success: false,
+        message: 'Document Storage path is invalid'
+      };
+    }
+
+    // Delete the canonical Storage object recorded for this document.
     const { error: deleteError } = await supabase.storage
-      .from('userfiles')
-      .remove([file_path]);
+      .from(USER_FILES_BUCKET)
+      .remove([document.file_path]);
 
     if (deleteError) {
       console.error('Error deleting file from storage:', deleteError);
@@ -95,7 +117,7 @@ export async function getDocumentSignedUrl(filePath: string | null) {
   const userId = session.sub;
 
   // Verify the file belongs to the user
-  if (!filePath.startsWith(`${userId}/`)) {
+  if (!isUserStoragePath(filePath, userId)) {
     return { success: false, url: null, message: 'Ikke autoriseret' };
   }
 
@@ -103,7 +125,7 @@ export async function getDocumentSignedUrl(filePath: string | null) {
     const supabase = await createServerSupabaseClient();
 
     const { data, error } = await supabase.storage
-      .from('userfiles')
+      .from(USER_FILES_BUCKET)
       .createSignedUrl(filePath, 3600);
 
     if (error || !data?.signedUrl) {

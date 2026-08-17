@@ -162,7 +162,9 @@ const DocumentChatTool: React.FC<DocumentChatToolProps> = ({
                               {doc.pages.slice(0, 10).map((page, pageIdx) => (
                                 <Link
                                   key={pageIdx}
-                                  href={`?pdf=${encodeBase64(doc.title)}&p=${page.page}`}
+                                  href={`?pdf=${encodeURIComponent(
+                                    encodeBase64(doc.title)
+                                  )}&p=${page.page}`}
                                   className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
                                   prefetch={false}
                                 >

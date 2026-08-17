@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/server/supabase';
 import { createAdminClient } from '@/lib/server/admin';
+import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,8 +38,22 @@ export async function POST(req: NextRequest) {
 
     for (const file of uploadedFiles) {
       try {
+        if (
+          !file ||
+          typeof file.name !== 'string' ||
+          !file.name.trim() ||
+          !isUserStoragePath(file.path, session.sub)
+        ) {
+          results.push({
+            file: file?.name || 'unknown',
+            status: 'error',
+            message: 'Invalid document path'
+          });
+          continue;
+        }
+
         const { data, error } = await supabaseAdmin.storage
-          .from('userfiles')
+          .from(USER_FILES_BUCKET)
           .download(file.path);
 
         if (error) {
@@ -75,6 +90,7 @@ export async function POST(req: NextRequest) {
         const uploadResult = await uploadResponse.json();
         results.push({
           file: file.name,
+          filePath: file.path,
           status: 'success',
           jobId: uploadResult.id
         });

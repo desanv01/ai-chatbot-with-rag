@@ -2,15 +2,31 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/server/admin';
-import { encodeBase64 } from '@/utils/base64';
 import { getSession } from '@/lib/server/supabase';
+import { createUserDocumentPath, USER_FILES_BUCKET } from '@/lib/document-path';
+import { z } from 'zod';
 
 const MAX_TOTAL_SIZE = 150 * 1024 * 1024; // 150 MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+
+const uploadRequestSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  fileSize: z.number().int().positive().max(MAX_FILE_SIZE),
+  fileType: z.string().optional()
+});
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { fileName, fileSize } = body;
+    const parsedBody = uploadRequestSchema.safeParse(await request.json());
+
+    if (!parsedBody.success) {
+      return NextResponse.json(
+        { message: 'Invalid upload metadata' },
+        { status: 400 }
+      );
+    }
+
+    const { fileSize } = parsedBody.data;
 
     const session = await getSession();
     if (!session) {
@@ -21,7 +37,7 @@ export async function POST(request: NextRequest) {
 
     // Check current total size
     const { data: files, error: listError } = await supabase.storage
-      .from('userfiles')
+      .from(USER_FILES_BUCKET)
       .list(userId);
 
     if (listError) {
@@ -47,12 +63,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const encodedFileName = encodeBase64(fileName);
-
-    const filePath = `${userId}/${encodedFileName}`;
+    const filePath = createUserDocumentPath(userId);
 
     const { data, error } = await supabase.storage
-      .from('userfiles')
+      .from(USER_FILES_BUCKET)
       .createSignedUploadUrl(filePath);
 
     if (error) {

@@ -4,8 +4,10 @@ import WebsiteWiever from '../components/WebsiteWiever';
 import DocumentViewer from '../components/PDFViewer';
 import UserPdfViewer from '../components/UserPdfFiles';
 import { fetchChat, formatMessages } from './fetch';
-import { getUserInfo } from '@/lib/server/supabase';
-import { createClient } from '@/lib/client/client';
+import { createAdminClient } from '@/lib/server/admin';
+import { getUserDocumentByReference } from '@/lib/server/documents';
+import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
+import { encodeBase64 } from '@/utils/base64';
 
 const ALLOWED_MODEL_VALUES = new Set([
   'gpt-5',
@@ -75,27 +77,24 @@ export default async function ChatPage(props: {
       ) : searchParams.url ? (
         <WebsiteWiever url={decodeURIComponent(searchParams.url)} />
       ) : searchParams.pdf ? (
-        <DocumentComponent fileName={decodeURIComponent(searchParams.pdf)} />
+        <DocumentComponent fileReference={decodeURIComponent(searchParams.pdf)} />
       ) : null}
     </div>
   );
 }
 
-async function DocumentComponent({ fileName }: { fileName: string }) {
-  const session = await getUserInfo();
-  const userId = session?.id;
+async function DocumentComponent({ fileReference }: { fileReference: string }) {
+  const document = await getUserDocumentByReference(fileReference);
 
   let signedUrl: string | null = null;
 
-  if (userId) {
+  if (document && isUserStoragePath(document.file_path, document.user_id)) {
     try {
-      const supabase = createClient();
-      const decodedFileName = decodeURIComponent(fileName);
-      const filePath = `${userId}/${decodedFileName}`;
+      const supabase = createAdminClient();
 
       const { data, error } = await supabase.storage
-        .from('userfiles')
-        .createSignedUrl(filePath, 3600); // 1 hour expiry
+        .from(USER_FILES_BUCKET)
+        .createSignedUrl(document.file_path, 3600); // 1 hour expiry
 
       if (!error && data) signedUrl = data.signedUrl;
     } catch (error) {
@@ -103,5 +102,11 @@ async function DocumentComponent({ fileName }: { fileName: string }) {
     }
   }
 
-  return <DocumentViewer fileName={fileName} signedUrl={signedUrl} />;
+  const displayName = document?.title || fileReference;
+  return (
+    <DocumentViewer
+      fileName={encodeBase64(displayName)}
+      signedUrl={signedUrl}
+    />
+  );
 }
