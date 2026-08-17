@@ -8,43 +8,36 @@ import { createAdminClient } from '@/lib/server/admin';
 import { getUserDocumentByReference } from '@/lib/server/documents';
 import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
 import { encodeBase64 } from '@/utils/base64';
+import { sanitizeChatModel } from '@/lib/model-config';
 
 interface PageProps {
   searchParams: Promise<Record<string, string>>;
-}
-
-const ALLOWED_MODEL_VALUES = new Set([
-  'gpt-5',
-  'gpt-5-mini',
-  'o3',
-  'claude-4-sonnet',
-  'gemini-3-flash-preview',
-  'gemini-3-pro-preview',
-  'gemini-2.5-flash-preview-09-2025'
-]);
-
-function sanitizeModel(value: string | undefined) {
-  if (!value) return 'gpt-5';
-  return ALLOWED_MODEL_VALUES.has(value) ? value : 'gpt-5';
 }
 
 export default async function ChatPage(props: PageProps) {
   const searchParams = await props.searchParams;
   const cookieStore = await cookies();
 
-  const selectedOption = sanitizeModel(cookieStore.get('selectedOption')?.value);
+  const selectedOption = sanitizeChatModel(
+    cookieStore.get('selectedOption')?.value
+  );
   const createChatId = uuidv4();
 
   return (
     <div className="flex w-full">
       <div className="flex-1">
-        <ChatComponent chatId={createChatId} initialSelectedOption={selectedOption} />
+        <ChatComponent
+          chatId={createChatId}
+          initialSelectedOption={selectedOption}
+        />
       </div>
 
       {searchParams.url ? (
         <WebsiteWiever url={decodeURIComponent(searchParams.url)} />
       ) : searchParams.pdf ? (
-        <DocumentComponent fileReference={decodeURIComponent(searchParams.pdf)} />
+        <DocumentComponent
+          fileReference={decodeURIComponent(searchParams.pdf)}
+        />
       ) : null}
     </div>
   );

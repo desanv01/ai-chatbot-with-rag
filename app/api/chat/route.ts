@@ -15,6 +15,14 @@ import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 import type { SharedV2ProviderMetadata } from '@ai-sdk/provider';
 
 import { getSession } from '@/lib/server/supabase';
+import {
+  DEFAULT_CHAT_MODEL,
+  isGoogleChatModel,
+  isGoogleFreeChatModel,
+  normalizeGoogleModelId,
+  sanitizeChatModel,
+  type ChatModelValue
+} from '@/lib/model-config';
 import { searchUserDocument } from './tools/documentChat';
 import { websiteSearchTool } from './tools/WebsiteSearchTool';
 
@@ -71,66 +79,21 @@ function isGeminiNotFoundError(err: any): boolean {
 }
 
 function readSelectedModel(body: any): string {
-  return (
+  const selectedModel =
     body?.option ||
     body?.model ||
     body?.selectedModel ||
     body?.providerModel ||
-    'gpt-5'
-  );
-}
+    DEFAULT_CHAT_MODEL;
 
-/**
- * ✅ Allowlist of UI values the backend will accept.
- * Anything else will fall back safely.
- */
-const ALLOWED_UI_MODELS = new Set([
-  // OpenAI
-  'gpt-5',
-  'gpt-5-mini',
-  'o3',
-
-  // Anthropic
-  'claude-4-sonnet',
-
-  // Google (ONLY preview IDs!)
-  'gemini-3-flash-preview',
-  'gemini-3-pro-preview',
-  'gemini-2.5-flash-preview-09-2025'
-]);
-
-/**
- * Normalize Google model ids.
- * ✅ IMPORTANT: Use only ids that work with v1beta generateContent.
- */
-function normalizeGoogleModelId(selectedModel: string): string {
-  const raw = (selectedModel ?? '').trim();
-
-  const map: Record<string, string> = {
-    // Correct IDs:
-    'gemini-3-flash-preview': 'gemini-3-flash-preview',
-    'gemini-3-pro-preview': 'gemini-3-pro-preview',
-    'gemini-2.5-flash-preview-09-2025': 'gemini-2.5-flash-preview-09-2025',
-
-    // Legacy IDs seen in older UI/code:
-    'gemini-3-flash': 'gemini-3-flash-preview',
-    'gemini-3-pro': 'gemini-3-pro-preview',
-    'gemini-2.5-flash': 'gemini-2.5-flash-preview-09-2025',
-
-    // Friendly labels:
-    'Gemini 3 Flash': 'gemini-3-flash-preview',
-    'Gemini 3 Pro': 'gemini-3-pro-preview',
-    'Gemini 2.5 Flash': 'gemini-2.5-flash-preview-09-2025'
-  };
-
-  return map[raw] ?? raw;
+  return typeof selectedModel === 'string' ? selectedModel : DEFAULT_CHAT_MODEL;
 }
 
 /**
  * If GOOGLE_FREE_TIER_ONLY=true, force to a Flash model.
  * Otherwise allow Flash + Pro.
  */
-function pickSafeGoogleModel(selectedModel: string): string {
+function pickSafeGoogleModel(selectedModel: string): ChatModelValue {
   const freeOnly =
     (process.env.GOOGLE_FREE_TIER_ONLY ?? '').toLowerCase() === 'true';
 
@@ -144,33 +107,28 @@ function pickSafeGoogleModel(selectedModel: string): string {
 
   const normalized = normalizeGoogleModelId(selectedModel);
 
-  // When not free-only, allow Flash + Pro + (optional) 2.5 flash preview
+  // When not free-only, allow Flash + Pro + 2.5 Flash preview.
   if (!freeOnly) {
-    const allowedPaid = new Set([
-      'gemini-3-flash-preview',
-      'gemini-3-pro-preview',
-      'gemini-2.5-flash-preview-09-2025'
-    ]);
-    return allowedPaid.has(normalized) ? normalized : defaultModel;
+    if (isGoogleChatModel(normalized)) return normalized;
+    if (isGoogleChatModel(defaultModel)) return defaultModel;
+    if (isGoogleChatModel(fallbackModel)) return fallbackModel;
+    return 'gemini-3-flash-preview';
   }
 
   // Free-only: allow flash models only
-  const allowedFree = new Set([
-    'gemini-3-flash-preview',
-    'gemini-2.5-flash-preview-09-2025'
-  ]);
-
-  if (allowedFree.has(normalized)) return normalized;
+  if (isGoogleFreeChatModel(normalized)) return normalized;
 
   // Force to default/fallback if user selected Pro
-  if (allowedFree.has(defaultModel)) return defaultModel;
-  return allowedFree.has(fallbackModel) ? fallbackModel : 'gemini-3-flash-preview';
+  if (isGoogleFreeChatModel(defaultModel)) return defaultModel;
+  return isGoogleFreeChatModel(fallbackModel)
+    ? fallbackModel
+    : 'gemini-3-flash-preview';
 }
 
 /**
  * Convert selected model -> provider model instance
  */
-function getModel(selectedModel: string) {
+function getModel(selectedModel: ChatModelValue) {
   switch (selectedModel) {
     case 'claude-4-sonnet':
       return anthropic('claude-sonnet-4-5');
@@ -214,7 +172,6 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const messages: UIMessage[] = body.messages ?? [];
   const chatSessionId = body.chatId;
-  const signal = body.signal;
 
   if (!chatSessionId) {
     return new NextResponse(
@@ -229,15 +186,9 @@ export async function POST(req: NextRequest) {
   const rawSelectedModel = readSelectedModel(body);
   const userId = session.sub;
 
-  // ✅ First normalize possible legacy gemini values
-  const normalizedIncoming = rawSelectedModel.toLowerCase().includes('gemini')
-    ? normalizeGoogleModelId(rawSelectedModel)
-    : rawSelectedModel;
-
-  // ✅ Enforce allowlist (prevents old values like "gemini-3-flash" leaking)
-  const safeIncoming = ALLOWED_UI_MODELS.has(normalizedIncoming)
-    ? normalizedIncoming
-    : 'gpt-5';
+  // Normalize legacy aliases and enforce the shared model allowlist.
+  const normalizedIncoming = normalizeGoogleModelId(rawSelectedModel);
+  const safeIncoming = sanitizeChatModel(rawSelectedModel);
 
   // ✅ Then apply free-tier enforcement for Gemini
   const selectedModel = safeIncoming.toLowerCase().includes('gemini')
@@ -283,7 +234,9 @@ export async function POST(req: NextRequest) {
     model: getModel(selectedModel),
     system: systemPrompt,
     messages: await convertToModelMessages(messages),
-    abortSignal: signal,
+    // The request signal is the only cancellation signal the server can trust.
+    // A JSON field such as body.signal is just data, not an AbortSignal.
+    abortSignal: req.signal,
     providerOptions,
 
     maxRetries: 0,

@@ -1,6 +1,7 @@
 import { type EmailOtpType } from '@supabase/supabase-js';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
+import { getSafeRedirectPath } from '@/lib/auth-redirect';
 import { createServerSupabaseClient } from '@/lib/server/server';
 
 export const dynamic = 'force-dynamic';
@@ -10,8 +11,8 @@ export async function GET(request: NextRequest) {
   const token_hash_searchParam = searchParams.get('token_hash');
   const code = searchParams.get('code');
   const type = searchParams.get('type') as EmailOtpType | null;
-  const next = searchParams.get('next') ?? '/';
-  const redirectTo = request.nextUrl.clone();
+  const next = getSafeRedirectPath(searchParams.get('next'), '/');
+  let redirectTo = new URL(next, request.url);
 
   const token_hash = code ?? token_hash_searchParam;
 
@@ -24,41 +25,23 @@ export async function GET(request: NextRequest) {
     });
 
     if (data) {
-      if (next) {
-        redirectTo.pathname = next;
-        redirectTo.searchParams.set(
-          'message',
-          encodeURIComponent('You can now sign in.')
-        );
-      } else {
-        redirectTo.pathname = '/signin';
-        redirectTo.searchParams.set(
-          'message',
-          encodeURIComponent('You can now sign in.')
-        );
-      }
+      redirectTo.searchParams.set('message', 'You can now sign in.');
     } else {
       // Instead of redirecting to error page, go to root with error message
-      redirectTo.pathname = '/';
+      redirectTo = new URL('/', request.url);
       redirectTo.searchParams.set(
         'error',
-        encodeURIComponent('Authentication failed. Please try again.')
+        'Authentication failed. Please try again.'
       );
     }
   } else {
     // No valid token or type, go to root with error message
-    redirectTo.pathname = '/';
+    redirectTo = new URL('/', request.url);
     redirectTo.searchParams.set(
       'error',
-      encodeURIComponent('Invalid authentication attempt. Please try again.')
+      'Invalid authentication attempt. Please try again.'
     );
   }
-
-  // Clean up unnecessary parameters
-  redirectTo.searchParams.delete('token_hash');
-  redirectTo.searchParams.delete('code');
-  redirectTo.searchParams.delete('type');
-  redirectTo.searchParams.delete('next');
 
   return NextResponse.redirect(redirectTo);
 }
