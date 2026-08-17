@@ -2,7 +2,11 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useDropzone, FileRejection, FileWithPath } from 'react-dropzone';
+import {
+  useDropzone,
+  type FileRejection,
+  type FileWithPath
+} from 'react-dropzone';
 import useSWR, { mutate } from 'swr';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -61,11 +65,10 @@ interface FileManagerProps {
 
 const ITEMS_PER_PAGE = 10;
 
-const SUPPORTED_FILE_TYPES: { [key: string]: string[] } = {
+const SUPPORTED_FILE_TYPES: Record<string, string[]> = {
   'application/pdf': ['.pdf', '.PDF']
 };
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
-
 export function FileManager({
   documents,
   selectedDocFileName,
@@ -235,9 +238,7 @@ export function FileManager({
           await presignedResponse.json();
 
         if (totalSize + file.size > maxSize) {
-          throw new Error(
-            `Max size exceeded (${maxSize / (1024 * 1024)} MB)`
-          );
+          throw new Error(`Max size exceeded (${maxSize / (1024 * 1024)} MB)`);
         }
 
         uploadedFilePath = filePath;
@@ -353,18 +354,19 @@ export function FileManager({
   };
 
   const handleConfirmDelete = async () => {
-    if (!documentToDelete) return;
+    const document = documentToDelete;
+    if (!document) return;
 
-    setDeletingId(documentToDelete.id);
+    setDeletingId(document.id);
     setDeleteDialogOpen(false);
 
     const formData = new FormData();
-    formData.append('file_id', documentToDelete.id);
+    formData.append('file_id', document.id);
 
     const result = await deleteUserFile(formData);
     if (result.success) {
       // If deleted doc was selected, clear URL
-      if (isDocSelected(documentToDelete)) {
+      if (isDocSelected(document)) {
         router.push('/filer');
       }
       router.refresh();

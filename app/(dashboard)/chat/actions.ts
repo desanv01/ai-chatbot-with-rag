@@ -74,7 +74,7 @@ function categorizeChats(chatPreviews: ChatPreview[]): CategorizedChats {
 
 export async function fetchChatPreviews(
   offset: number,
-  limit: number = 30
+  limit = 30
 ): Promise<FetchChatPreviewsResponse | null> {
   const session = await getSession();
   if (!session) {
@@ -163,7 +163,7 @@ export async function deleteChatData(chatId: string) {
       .eq('id', chatId);
 
     if (sessionError) throw sessionError;
-    refresh()
+    refresh();
     return { message: 'Chat data and references deleted successfully' };
   } catch (error) {
     console.error('Error during deletion:', error);
@@ -214,7 +214,10 @@ export async function deleteFilterTagAndDocumentChunks(formData: FormData) {
     }
 
     if (!isUserStoragePath(document.file_path, userId)) {
-      console.error('Document has an invalid Storage path:', document.file_path);
+      console.error(
+        'Document has an invalid Storage path:',
+        document.file_path
+      );
       return {
         success: false,
         message: 'Document Storage path is invalid'
@@ -252,7 +255,7 @@ export async function deleteFilterTagAndDocumentChunks(formData: FormData) {
 
     const deletedCount = deletedData?.length || 0;
 
-    refresh()
+    refresh();
 
     return {
       success: true,
@@ -306,7 +309,7 @@ export async function updateChatTitle(formData: FormData) {
     throw new Error(`Failed to update chat title: ${updateError.message}`);
   }
 
-   refresh()
+  refresh();
 
   return { success: true };
 }

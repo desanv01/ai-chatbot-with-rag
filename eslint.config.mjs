@@ -1,13 +1,10 @@
-import { FlatCompat } from '@eslint/eslintrc';
 import js from '@eslint/js';
 import prettierConfig from 'eslint-config-prettier';
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
+import nextTypeScript from 'eslint-config-next/typescript';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import { defineConfig } from 'eslint/config';
-
-const compat = new FlatCompat({
-  baseDirectory: import.meta.dirname
-});
 
 export default defineConfig([
   {
@@ -19,8 +16,8 @@ export default defineConfig([
   ...tseslint.configs.stylisticTypeChecked,
 
   // Next.js config
-  ...compat.extends('next/core-web-vitals'),
-  ...compat.extends('next/typescript'),
+  ...nextCoreWebVitals,
+  ...nextTypeScript,
 
   {
     linterOptions: {
@@ -55,6 +52,8 @@ export default defineConfig([
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
       ],
+      // This project uses both aliases and interfaces intentionally.
+      '@typescript-eslint/consistent-type-definitions': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/consistent-type-imports': [
         'warn',

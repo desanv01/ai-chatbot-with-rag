@@ -28,7 +28,9 @@ export default function SignInCard() {
   });
 
   useEffect(() => {
-    setRememberedEmail(localStorage.getItem('rememberedEmail') || '');
+    queueMicrotask(() => {
+      setRememberedEmail(localStorage.getItem('rememberedEmail') || '');
+    });
   }, []);
 
   const handleSubmit = async (formData: FormData) => {

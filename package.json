@@ -25,7 +25,8 @@
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "typecheck": "tsc --noEmit --incremental false"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.15",

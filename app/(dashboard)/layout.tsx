@@ -86,7 +86,7 @@ async function getUserData() {
             subData.status === 'canceled') &&
           isAfter(end, new Date());
       }
-    } catch (e) {
+    } catch {
       // If subscriptions table doesn't exist yet, just ignore.
       hasActiveSubscription = false;
     }
