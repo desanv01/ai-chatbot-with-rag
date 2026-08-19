@@ -32,7 +32,15 @@ export const getUserInfo = cache(async () => {
       return null;
     }
 
-    return data;
+    if (!data) return null;
+
+    // The database permits a missing display name or email. Keep the UI
+    // components' string contract stable by normalizing nullable values here.
+    return {
+      ...data,
+      full_name: data.full_name ?? '',
+      email: data.email ?? ''
+    };
   } catch (error) {
     console.error('Error:', error);
     return null;
