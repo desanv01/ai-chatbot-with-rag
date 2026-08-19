@@ -226,7 +226,7 @@ export type Database = {
       subscriptions: {
         Row: {
           created_at: string;
-          id: string;
+          id: number;
           name: string | null;
           status: string;
           stripe_current_period_end: string;
@@ -237,7 +237,7 @@ export type Database = {
         };
         Insert: {
           created_at?: string;
-          id?: string;
+          id?: number;
           name?: string | null;
           status: string;
           stripe_current_period_end: string;
@@ -248,7 +248,7 @@ export type Database = {
         };
         Update: {
           created_at?: string;
-          id?: string;
+          id?: number;
           name?: string | null;
           status?: string;
           stripe_current_period_end?: string;
@@ -259,7 +259,7 @@ export type Database = {
         };
         Relationships: [
           {
-            foreignKeyName: 'fk_subscriptions_user';
+            foreignKeyName: 'subscriptions_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: true;
             referencedRelation: 'users';
@@ -278,6 +278,7 @@ export type Database = {
           id: string;
           title: string;
           total_pages: number;
+          updated_at: string | null;
           user_id: string;
         };
         Insert: {
@@ -290,6 +291,7 @@ export type Database = {
           id?: string;
           title: string;
           total_pages: number;
+          updated_at?: string | null;
           user_id: string;
         };
         Update: {
@@ -302,6 +304,7 @@ export type Database = {
           id?: string;
           title?: string;
           total_pages?: number;
+          updated_at?: string | null;
           user_id?: string;
         };
         Relationships: [
@@ -348,22 +351,22 @@ export type Database = {
       };
       users: {
         Row: {
-          email: string;
-          full_name: string;
+          email: string | null;
+          full_name: string | null;
           id: string;
           role: string;
           stripe_customer_id: string | null;
         };
         Insert: {
-          email: string;
-          full_name?: string;
+          email?: string | null;
+          full_name?: string | null;
           id: string;
           role?: string;
           stripe_customer_id?: string | null;
         };
         Update: {
-          email?: string;
-          full_name?: string;
+          email?: string | null;
+          full_name?: string | null;
           id?: string;
           role?: string;
           stripe_customer_id?: string | null;

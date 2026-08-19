@@ -8,7 +8,14 @@ import { defineConfig } from 'eslint/config';
 
 export default defineConfig([
   {
-    ignores: ['.next', 'node_modules', '**/*.d.ts', 'components/**/*']
+    ignores: [
+  '.next',
+  'node_modules',
+  '**/*.d.ts',
+  'components/**/*',
+  'supabase/.temp/**',
+  'supabase/.branches/**'
+]
   },
   // Base configs
   js.configs.recommended,

@@ -36,17 +36,19 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": [
+    "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "types/global.d.ts", // Add this line
+    "types/global.d.ts",
     "next.config.ts",
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
-    ".next"
+    ".next",
+    "supabase/.temp",
+    "supabase/.branches"
   ]
 }
