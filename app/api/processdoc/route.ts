@@ -173,7 +173,7 @@ async function processFile(
               }
             });
 
-            if (!embedding || embedding.length !== 1024) {
+            if (embedding?.length !== 1024) {
               console.error(
                 `Invalid embedding generated for page ${pageNumber}`
               );
