@@ -67,6 +67,11 @@ export default async function ProtectedPage() {
     redirect('/');
   }
 
+  const profileUser = {
+    full_name: userInfo.full_name ?? '',
+    email: userInfo.email ?? ''
+  };
+
   // Extended user attributes
 
   return (
@@ -74,7 +79,10 @@ export default async function ProtectedPage() {
       <div className="container mx-auto px-4">
         {/* Profile Header */}
         <AnimatedSection delay={0}>
-          <ProfileHeader userInfo={userInfo} userAttributes={userAttributes} />
+          <ProfileHeader
+            userInfo={profileUser}
+            userAttributes={userAttributes}
+          />
         </AnimatedSection>
 
         {/* Main Content */}
@@ -83,7 +91,7 @@ export default async function ProtectedPage() {
           <div className="lg:col-span-4 space-y-6">
             <AnimatedSection delay={0.1} direction="left">
               <PersonalInfoCard
-                userInfo={userInfo}
+                userInfo={profileUser}
                 userAttributes={userAttributes}
               />
             </AnimatedSection>
