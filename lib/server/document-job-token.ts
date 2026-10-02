@@ -57,8 +57,10 @@ export function verifyDocumentJobToken(
 ): boolean {
   if (typeof token !== 'string') return false;
 
-  const [encodedPayload, signature, extraPart] = token.split('.');
-  if (!encodedPayload || !signature || extraPart) return false;
+  const parts = token.split('.');
+  if (parts.length !== 2) return false;
+  const [encodedPayload, signature] = parts;
+  if (!encodedPayload || !signature) return false;
 
   try {
     const expectedSignature = signPayload(encodedPayload);

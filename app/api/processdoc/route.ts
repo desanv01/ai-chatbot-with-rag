@@ -196,6 +196,7 @@ async function processFile(
           }
         } catch (error) {
           console.error(`Error processing document page: ${pageNumber}`, error);
+          failedPages.push(pageNumber);
         }
       })
     );
