@@ -35,17 +35,21 @@ Suspected later ingestion, retrieval, persistence, and authentication defects ar
 
 Requested Fast speed has not been verified by a tool. Do not change global settings to implement that request.
 
+## Branch deployment guard
+
+Main reported that the PR 12 push automatically triggered Vercel deployment `dpl_DU6uYfAP3LeMS9B83YsqNA4NTcgi`, labelled production, which ended in `ERROR` with no successful rollout. GitHub lint and type checks passed. To enforce the deployment boundary, `vercel.json` disables Git-triggered deployments specifically for `v1/phase0-baseline`, `v1/phase1-runtime`, and `agent/reapply-document-processing-hardening`. Unspecified branches retain the default enabled behavior, as described in the [Vercel Git configuration documentation](https://vercel.com/docs/project-configuration/git-configuration) checked by main. Re-enabling deployment for these branches requires later hosted-release authorization.
+
 ## Main acceptance checklist
 
-- [ ] Confirm the Phase 0 document is the only implementation-worker change, at `docs/v1-phase0-baseline.md` on `v1/phase0-baseline`.
-- [ ] Confirm the worktree branch and base commit match the recorded baseline.
-- [ ] Confirm the original modified `.gitignore` and untracked analysis and environment files are preserved and excluded from integration.
-- [ ] Confirm historical hardening remains separate and no merge or deployment has occurred.
-- [ ] Accept the Node.js 24 LTS family alignment for Phase 1.
-- [ ] Confirm placeholder-like configuration and unverified backend/data status are recorded without secret values or private file hashes.
-- [ ] Confirm Phase 1 stays within dependency installation, static checks, build, and development/production startup validation.
-- [ ] Require a reproduced failure for runtime defect fixes; record the supported-runtime evidence for CI alignment.
+- [x] Confirm the Phase 0 worker changes are limited to docs/v1-phase0-baseline.md and vercel.json on v1/phase0-baseline.
+- [x] Confirm the worktree branch and base commit match the recorded baseline.
+- [x] Confirm the original modified `.gitignore` and untracked analysis and environment files are preserved and excluded from integration.
+- [x] Confirm historical hardening remains separate; the automatic deployment failed and no successful rollout occurred.
+- [x] Accept the Node.js 24 LTS family alignment for Phase 1.
+- [x] Confirm placeholder-like configuration and unverified backend/data status are recorded without secret values or private file hashes.
+- [x] Confirm Phase 1 stays within dependency installation, static checks, build, and development/production startup validation.
+- [x] Require a reproduced failure for runtime defect fixes; record the supported-runtime evidence for CI alignment.
 - [ ] Require the reproducible startup document and main validation record before Phase 1 acceptance.
-- [ ] Keep later defect hypotheses and Phases 2 through 7 deferred until separately authorized.
+- [x] Keep later defect hypotheses and Phases 2 through 7 deferred until separately authorized.
 
-The Phase 0 implementation worker creates only this document and runs no tests, audits, npm commands, commits, or pushes. Main acceptance remains pending.
+The Phase 0 worker implemented the baseline document and branch deployment guard. Main reviewed and accepted these scoped files; GitHub checks and integration are recorded separately in the phase validation report.
