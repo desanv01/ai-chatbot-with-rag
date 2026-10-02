@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/server/supabase';
 import { createAdminClient } from '@/lib/server/admin';
 import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
+import { createDocumentJobToken } from '@/lib/server/document-job-token';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,6 +78,7 @@ export async function POST(req: NextRequest) {
               Authorization: `Bearer ${process.env.LLAMA_CLOUD_API_KEY}`,
               Accept: 'application/json'
             },
+            signal: AbortSignal.timeout(45_000),
             body: formData
           }
         );
@@ -88,16 +90,30 @@ export async function POST(req: NextRequest) {
         }
 
         const uploadResult = await uploadResponse.json();
+        if (!uploadResult || typeof uploadResult.id !== 'string') {
+          throw new Error('LlamaParse returned an invalid job identifier');
+        }
+
+        const jobToken = createDocumentJobToken({
+          jobId: uploadResult.id,
+          userId: session.sub,
+          filePath: file.path
+        });
+
         results.push({
           file: file.name,
           filePath: file.path,
           status: 'success',
-          jobId: uploadResult.id
+          jobId: uploadResult.id,
+          jobToken
         });
       } catch (error) {
-        console.error(`Error processing file ${file.name}:`, error);
+        console.error(
+          `Error processing file ${file?.name || 'unknown'}:`,
+          error
+        );
         results.push({
-          file: file.name,
+          file: file?.name || 'unknown',
           status: 'error',
           message: 'Processing failed'
         });

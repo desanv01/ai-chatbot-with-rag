@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/server/supabase';
+import { verifyDocumentJobToken } from '@/lib/server/document-job-token';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,15 +25,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { jobId } = await req.json();
+    const { jobId, jobToken } = await req.json();
+
+    if (
+      typeof jobId !== 'string' ||
+      !jobId.trim() ||
+      !verifyDocumentJobToken(jobToken, {
+        jobId,
+        userId: session.sub
+      })
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid or expired document job token' },
+        { status: 403 }
+      );
+    }
 
     const statusResponse = await fetch(
-      `https://api.cloud.llamaindex.ai/api/v1/parsing/job/${jobId}`,
+      `https://api.cloud.llamaindex.ai/api/v1/parsing/job/${encodeURIComponent(
+        jobId
+      )}`,
       {
         headers: {
           Authorization: `Bearer ${process.env.LLAMA_CLOUD_API_KEY}`,
           Accept: 'application/json'
-        }
+        },
+        signal: AbortSignal.timeout(15_000)
       }
     );
 
@@ -45,20 +63,27 @@ export async function POST(req: NextRequest) {
     }
 
     const statusData = await statusResponse.json();
+    const status =
+      statusData && typeof statusData.status === 'string'
+        ? statusData.status
+        : 'UNKNOWN';
 
-    if (statusData.status === 'PENDING') {
+    if (status === 'PENDING') {
       return NextResponse.json({ status: 'PENDING' });
-    } else if (statusData.status === 'ERROR') {
-      console.error('Parsing job failed:', statusData.error_message);
+    } else if (status === 'ERROR') {
+      console.error('Parsing job failed for a document processing token');
       return NextResponse.json(
-        { error: `Parsing job failed: ${statusData.error_message}` },
-        { status: 500 }
+        { error: 'Parsing job failed' },
+        { status: 502 }
       );
-    } else if (statusData.status === 'SUCCESS') {
+    } else if (status === 'SUCCESS') {
       return NextResponse.json({ status: 'SUCCESS' });
     }
 
-    return NextResponse.json({ status: 'UNKNOWN' });
+    return NextResponse.json(
+      { error: 'LlamaParse returned an unknown job status' },
+      { status: 502 }
+    );
   } catch (error) {
     console.error('Error in POST request:', error);
     return NextResponse.json(

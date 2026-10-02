@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "main": false,
+      "v1/phase0-baseline": false,
+      "v1/phase1-runtime": false,
+      "agent/reapply-document-processing-hardening": false
+    }
+  }
+}

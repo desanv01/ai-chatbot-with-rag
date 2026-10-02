@@ -90,10 +90,12 @@ flowchart LR
 
 ## Quick start
 
+See the [V1 local runtime guide](docs/v1-local-runtime.md) for configuration preservation, commands, and verified local acceptance results.
+
 ### Prerequisites
 
-- Node.js 20 or newer
-- npm
+- Node.js 24 LTS
+- npm 11
 - A Supabase project
 - LlamaCloud and Voyage API keys for document ingestion
 - At least one configured chat provider
@@ -104,14 +106,16 @@ flowchart LR
 ```bash
 git clone https://github.com/desanv01/ai-chatbot-with-rag.git
 cd ai-chatbot-with-rag
-npm install
-cp .env.example .env.local
+npm ci
+if [ ! -e .env.local ]; then cp .env.example .env.local; fi
 ```
 
 On Windows PowerShell, use:
 
 ```powershell
-Copy-Item .env.example .env.local
+if (-not (Test-Path -LiteralPath .env.local)) {
+    Copy-Item .env.example .env.local
+}
 ```
 
 Fill in `.env.local`, configure the Supabase schema, and start the development server:
@@ -124,7 +128,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Environment configuration
 
-Copy `.env.example` and provide only the services you intend to use. Never commit `.env.local` or a Supabase service-role key.
+Preserve an existing `.env.local`; copy `.env.example` only if `.env.local` is absent, and provide only the services you intend to use. Never commit `.env.local` or a Supabase service-role key.
 
 | Variable | Required for | Notes |
 |---|---|---|

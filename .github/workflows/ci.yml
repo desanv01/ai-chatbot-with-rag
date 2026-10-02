@@ -19,7 +19,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: '.nvmrc'
           cache: npm
 
       - name: Install dependencies
@@ -31,7 +31,12 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
-      # next build is intentionally not part of this secret-free job. The
-      # application validates Supabase/provider configuration while collecting
-      # route data, so deployment build validation belongs in the configured
-      # Vercel environment after the required secrets are present.
+      # Validates compilation and prerendering only, not service health.
+      # Never deploy this fixture or its build output.
+      - name: Build with non-secret placeholders
+        run: npm run build
+        env:
+          SUPABASE_URL: https://build-placeholder.supabase.co
+          SUPABASE_ANON_KEY: build-only-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: build-only-placeholder
+          NEXT_PUBLIC_SITE_URL: http://localhost:3000
