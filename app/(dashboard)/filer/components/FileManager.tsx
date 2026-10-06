@@ -35,6 +35,7 @@ import { enUS } from 'date-fns/locale';
 import Link from 'next/link';
 import { deleteUserFile } from '../action';
 import { encodeBase64 } from '@/utils/base64';
+import { MAX_PDF_SIZE } from '@/lib/document-limits';
 import {
   Pagination,
   PaginationContent,
@@ -68,7 +69,7 @@ const ITEMS_PER_PAGE = 10;
 const SUPPORTED_FILE_TYPES: Record<string, string[]> = {
   'application/pdf': ['.pdf', '.PDF']
 };
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const MAX_STATUS_POLLS = 120;
 export function FileManager({
   documents,
   selectedDocFileName,
@@ -102,7 +103,10 @@ export function FileManager({
   const [currentFileName, setCurrentFileName] = useState<string | null>(null);
   const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
   const [shouldCheckStatus, setShouldCheckStatus] = useState(false);
-  const [shouldProcessDoc, setShouldProcessDoc] = useState(false);
+  const uploadInFlightRef = useRef(false);
+  const activeJobRef = useRef<string | null>(null);
+  const processedJobRef = useRef<string | null>(null);
+  const statusPollCountRef = useRef(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   // Delete state
@@ -112,30 +116,65 @@ export function FileManager({
   );
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const resetUploadState = useCallback(() => {
+  const resetUploadState = useCallback((status = '') => {
+    uploadInFlightRef.current = false;
+    activeJobRef.current = null;
     setShouldCheckStatus(false);
-    setShouldProcessDoc(false);
-    mutate([`/api/checkdoc`, currentJobId, currentJobToken], null, false);
-    mutate(
-      [
-        '/api/processdoc',
-        currentJobId,
-        currentJobToken,
-        currentFilePath,
-        currentFileName
-      ],
-      null,
-      false
-    );
     setIsUploading(false);
     setUploadProgress(0);
-    setUploadStatus('');
+    setUploadStatus(status);
     setCurrentJobId(null);
     setCurrentJobToken(null);
     setCurrentFileName(null);
     setCurrentFilePath(null);
     setSelectedFile(null);
-  }, [currentJobId, currentJobToken, currentFileName, currentFilePath]);
+    formRef.current?.reset();
+  }, []);
+
+  // Explicit mutation: each successful parser job is processed once in this UI.
+  const processCurrentJob = async () => {
+    if (
+      !currentJobId ||
+      !currentJobToken ||
+      !currentFilePath ||
+      !currentFileName ||
+      activeJobRef.current !== currentJobId ||
+      processedJobRef.current === currentJobId
+    )
+      return;
+    const jobId = currentJobId;
+    processedJobRef.current = jobId;
+    try {
+      const response = await fetch('/api/processdoc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId,
+          jobToken: currentJobToken,
+          fileName: currentFileName,
+          filePath: currentFilePath
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || data.status !== 'SUCCESS') {
+        throw new Error(data.error || 'Failed to process document');
+      }
+      if (activeJobRef.current !== jobId) return;
+      setUploadProgress(100);
+      setUploadStatus('Upload complete!');
+      mutate('userFiles');
+      router.refresh();
+      setTimeout(() => {
+        if (activeJobRef.current === jobId) resetUploadState();
+      }, 2000);
+    } catch (error) {
+      if (activeJobRef.current === jobId) {
+        resetUploadState(
+          error instanceof Error ? error.message : 'Error processing file.'
+        );
+      }
+    }
+  };
 
   // Check if a document is selected based on URL
   const isDocSelected = (doc: UserDocument) => {
@@ -152,83 +191,71 @@ export function FileManager({
       ? [`/api/checkdoc`, currentJobId, currentJobToken]
       : null,
     async ([url, jobId, jobToken]) => {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, jobToken })
-      });
-      if (!response.ok) throw new Error('Failed to fetch processing status');
-      return response.json();
+      try {
+        if (
+          activeJobRef.current !== jobId ||
+          statusPollCountRef.current >= MAX_STATUS_POLLS
+        ) {
+          throw new Error(
+            'Analysis timed out after 120 status checks. Select a file to start a fresh upload.'
+          );
+        }
+        statusPollCountRef.current += 1;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId, jobToken })
+        });
+        if (!response.ok) throw new Error('Failed to fetch processing status');
+        return { ...(await response.json()), polledJobId: jobId };
+      } catch (error) {
+        throw Object.assign(
+          new Error(
+            error instanceof Error ? error.message : 'Error analyzing file.'
+          ),
+          { jobId }
+        );
+      }
     },
     {
       refreshInterval: 5000,
       revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      shouldRetryOnError: false,
       onSuccess: (data) => {
+        if (
+          data.polledJobId !== activeJobRef.current ||
+          processedJobRef.current === data.polledJobId
+        )
+          return;
         if (data.status === 'SUCCESS') {
           setUploadProgress(75);
           setUploadStatus('Finishing processing...');
           setShouldCheckStatus(false);
-          setShouldProcessDoc(true);
+          void processCurrentJob();
         } else if (data.status === 'PENDING') {
+          if (statusPollCountRef.current >= MAX_STATUS_POLLS) {
+            resetUploadState(
+              'Analysis timed out after 120 status checks. Select a file to start a fresh upload.'
+            );
+            return;
+          }
           setUploadStatus('Analyzing file...');
         } else {
-          setUploadStatus('Error analyzing file.');
-          resetUploadState();
+          resetUploadState('Error analyzing file.');
         }
       },
-      onError: () => {
-        setUploadStatus('Error analyzing file.');
-        resetUploadState();
-      }
-    }
-  );
-
-  // SWR for processing document
-  useSWR(
-    shouldProcessDoc &&
-      currentJobId &&
-      currentJobToken &&
-      currentFilePath &&
-      currentFileName
-      ? [
-          '/api/processdoc',
-          currentJobId,
-          currentJobToken,
-          currentFilePath,
-          currentFileName
-        ]
-      : null,
-    async ([url, jobId, jobToken, filePath, fileName]) => {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, jobToken, fileName, filePath })
-      });
-      if (!response.ok) throw new Error('Failed to process document');
-      return response.json();
-    },
-    {
-      onSuccess: (data) => {
-        if (data.status === 'SUCCESS') {
-          setUploadProgress(100);
-          setUploadStatus('Upload complete!');
-          mutate('userFiles');
-          router.refresh();
-          setTimeout(() => resetUploadState(), 2000);
-        } else {
-          setUploadStatus('Error processing file.');
-          resetUploadState();
-        }
-      },
-      onError: () => {
-        setUploadStatus('Fejl ved behandling af fil.');
-        resetUploadState();
+      onError: (error: Error & { jobId?: string }) => {
+        if (activeJobRef.current === error.jobId)
+          resetUploadState(error.message);
       }
     }
   );
 
   const uploadFile = useCallback(
     async (file: File) => {
+      if (uploadInFlightRef.current) return;
+      uploadInFlightRef.current = true;
       setIsUploading(true);
       setUploadProgress(0);
       setUploadStatus('Uploading...');
@@ -238,6 +265,13 @@ export function FileManager({
       try {
         // Original name used for display/title in your app
         const originalFileName = file.name.trim();
+        if (
+          !/\.pdf$/i.test(originalFileName) ||
+          file.size > MAX_PDF_SIZE ||
+          file.size === 0
+        ) {
+          throw new Error('Select a PDF no larger than 25 MiB');
+        }
 
         const presignedResponse = await fetch('/api/upload/presigned-url', {
           method: 'POST',
@@ -299,6 +333,8 @@ export function FileManager({
         setUploadStatus('Analyzing file...');
 
         if (result.results?.[0]?.jobId && result.results?.[0]?.jobToken) {
+          activeJobRef.current = result.results[0].jobId;
+          statusPollCountRef.current = 0;
           setCurrentJobId(result.results[0].jobId);
           setCurrentJobToken(result.results[0].jobToken);
           setCurrentFilePath(uploadedFilePath);
@@ -308,7 +344,9 @@ export function FileManager({
 
           setShouldCheckStatus(true);
         } else {
-          throw new Error('No signed processing job received');
+          throw new Error(
+            result.results?.[0]?.message || 'No signed processing job received'
+          );
         }
       } catch (error) {
         console.error('Upload error:', error);
@@ -321,14 +359,13 @@ export function FileManager({
               body: JSON.stringify({ filePath: uploadedFilePath })
             });
           } catch {
-            // ignore cleanup errors
+            // Preserve the original upload error if staged-object cleanup fails.
           }
         }
 
-        setUploadStatus(
+        resetUploadState(
           error instanceof Error ? error.message : 'Upload failed'
         );
-        setTimeout(() => resetUploadState(), 3000);
       }
     },
     [resetUploadState]
@@ -336,13 +373,18 @@ export function FileManager({
 
   const onDrop = useCallback(
     (acceptedFiles: FileWithPath[], fileRejections: FileRejection[]) => {
-      if (fileRejections.length > 0) return;
+      if (isUploading) return;
+      if (fileRejections.length > 0) {
+        setUploadStatus('Select a PDF no larger than 25 MiB');
+        return;
+      }
       const file = acceptedFiles[0];
       if (file) {
+        setUploadStatus('');
         setSelectedFile(file);
       }
     },
-    []
+    [isUploading]
   );
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
@@ -361,7 +403,8 @@ export function FileManager({
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: SUPPORTED_FILE_TYPES,
-    maxSize: MAX_FILE_SIZE,
+    maxSize: MAX_PDF_SIZE,
+    disabled: isUploading,
     multiple: false,
     noClick: selectedFile !== null || isUploading
   });
@@ -424,7 +467,7 @@ export function FileManager({
                 {isDragActive ? 'Drop file here' : 'Drag file here or click'}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                PDF, max 50 MB
+                PDF, max 25 MiB
               </p>
             </div>
           ) : (
@@ -465,6 +508,11 @@ export function FileManager({
                 </Button>
               )}
             </div>
+          )}
+          {!isUploading && uploadStatus && (
+            <p role="status" className="text-xs text-muted-foreground mt-2">
+              {uploadStatus}
+            </p>
           )}
         </form>
 

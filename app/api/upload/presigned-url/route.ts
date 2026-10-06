@@ -5,13 +5,18 @@ import { createAdminClient } from '@/lib/server/admin';
 import { getSession } from '@/lib/server/supabase';
 import { createUserDocumentPath, USER_FILES_BUCKET } from '@/lib/document-path';
 import { z } from 'zod';
+import { MAX_PDF_SIZE, MAX_TOTAL_DOCUMENT_SIZE } from '@/lib/document-limits';
 
-const MAX_TOTAL_SIZE = 150 * 1024 * 1024; // 150 MB
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const MAX_TOTAL_SIZE = MAX_TOTAL_DOCUMENT_SIZE;
 
 const uploadRequestSchema = z.object({
-  fileName: z.string().trim().min(1).max(255),
-  fileSize: z.number().int().positive().max(MAX_FILE_SIZE),
+  fileName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .regex(/\.pdf$/i),
+  fileSize: z.number().int().positive().max(MAX_PDF_SIZE),
   fileType: z.string().optional()
 });
 
@@ -21,12 +26,15 @@ export async function POST(request: NextRequest) {
 
     if (!parsedBody.success) {
       return NextResponse.json(
-        { message: 'Invalid upload metadata' },
+        {
+          message:
+            'Upload requires a PDF filename and a file no larger than 25 MiB'
+        },
         { status: 400 }
       );
     }
 
-    const { fileSize } = parsedBody.data;
+    const { fileName, fileSize } = parsedBody.data;
 
     const session = await getSession();
     if (!session) {
@@ -34,6 +42,30 @@ export async function POST(request: NextRequest) {
     }
     const userId = session.sub;
     const supabase = createAdminClient();
+
+    const { data: existingDocument, error: lookupError } = await supabase
+      .from('user_documents')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('title', fileName)
+      .maybeSingle();
+
+    if (lookupError) {
+      console.error('Error checking document filename:', lookupError);
+      return NextResponse.json(
+        { message: 'Could not check document filename' },
+        { status: 500 }
+      );
+    }
+    if (existingDocument) {
+      return NextResponse.json(
+        {
+          message:
+            'A document with this filename already exists. Choose a different filename.'
+        },
+        { status: 409 }
+      );
+    }
 
     // Check current total size
     const { data: files, error: listError } = await supabase.storage

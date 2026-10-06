@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/server/supabase';
 import { fetchSafeUrl, SafeProxyError } from '@/lib/server/safe-proxy';
+import { MAX_PDF_SIZE } from '@/lib/document-limits';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await fetchSafeUrl(url, {
-      maxBytes: 25 * 1024 * 1024,
+      maxBytes: MAX_PDF_SIZE,
       timeoutMs: 15_000,
       headers: {
         'User-Agent':

@@ -3,6 +3,7 @@ import { getSession } from '@/lib/server/supabase';
 import { createAdminClient } from '@/lib/server/admin';
 import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
 import { createDocumentJobToken } from '@/lib/server/document-job-token';
+import { MAX_PDF_SIZE } from '@/lib/document-limits';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,11 +54,47 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        if (!/\.pdf$/i.test(file.name.trim())) {
+          results.push({
+            file: file.name,
+            status: 'error',
+            message: 'Only PDF filenames are supported'
+          });
+          continue;
+        }
+
+        const { data: existingDocument, error: lookupError } =
+          await supabaseAdmin
+            .from('user_documents')
+            .select('id')
+            .eq('user_id', session.sub)
+            .eq('title', file.name.trim())
+            .maybeSingle();
+
+        if (lookupError) {
+          console.error('Error checking document filename:', lookupError);
+          results.push({
+            file: file.name,
+            status: 'error',
+            message: 'Could not check document filename'
+          });
+          continue;
+        }
+        if (existingDocument) {
+          results.push({
+            file: file.name,
+            status: 'error',
+            message:
+              'A document with this filename already exists. Choose a different filename.'
+          });
+          continue;
+        }
+
         const { data, error } = await supabaseAdmin.storage
           .from(USER_FILES_BUCKET)
           .download(file.path);
 
-        if (error) {
+        if (error || !data) {
           console.error('Error downloading file:', error);
           results.push({
             file: file.name,
@@ -67,8 +104,31 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        if (data.size > MAX_PDF_SIZE) {
+          results.push({
+            file: file.name,
+            status: 'error',
+            message: 'PDF exceeds the maximum size of 25 MiB'
+          });
+          continue;
+        }
+        const header = new Uint8Array(await data.slice(0, 5).arrayBuffer());
+        if (
+          header.length !== 5 ||
+          header.some(
+            (byte, index) => byte !== [0x25, 0x50, 0x44, 0x46, 0x2d][index]
+          )
+        ) {
+          results.push({
+            file: file.name,
+            status: 'error',
+            message: 'File does not have a valid PDF header'
+          });
+          continue;
+        }
+
         const formData = new FormData();
-        formData.append('file', new Blob([data]), file.name);
+        formData.append('file', data, file.name.trim());
 
         const uploadResponse = await fetch(
           'https://api.cloud.llamaindex.ai/api/v1/parsing/upload',
