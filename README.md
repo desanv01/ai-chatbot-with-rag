@@ -11,7 +11,7 @@
 
 Upload private PDFs, process them into searchable embeddings, and ask questions against their contents. The application combines document retrieval with streaming chat, selectable AI providers, web search, persistent conversations, and page-level PDF citations.
 
-> **Project status:** this repository is the recovered migration baseline for an active stabilization effort. The core product is implemented, but known build, security, data-path, and reliability issues are being addressed before production use. See [Current baseline](#current-baseline).
+> **Project status:** V1 has an implementation and offline validation checkpoint; operational acceptance remains pending Phase8. Phase0, Phase1 and Phase6 are accepted. Phase6 PR23 is merged with successful pre-merge CI; Phase7 documentation is prepared and reviewed, with merge/CI acceptance owned by main. No live migration, provider verification, or deployment is established by this checkpoint. See [Current checkpoint](#current-checkpoint) and [V1 validation](docs/V1_VALIDATION.md).
 
 ---
 
@@ -36,7 +36,7 @@ The goal is a practical foundation for a trustworthy personal research assistant
 - **Document ingestion** — parse PDFs through LlamaCloud/LlamaParse and generate page-level enriched content.
 - **Vector retrieval** — create 1,024-dimension Voyage embeddings and query them through a Supabase `match_documents` RPC.
 - **Multi-provider chat** — route conversations to configured Google, OpenAI, or Anthropic models through the AI SDK.
-- **Tool-enabled answers** — search selected documents and retrieve current web sources through Exa.
+- **Tool-enabled answers** — search the current user's ready documents and retrieve current web sources through Exa.
 - **Streaming persistence** — save chat sessions, messages, source parts, and tool results incrementally.
 - **Citation previews** — render document references and attempt to open the cited PDF page inside the chat experience.
 - **Responsive interface** — Next.js App Router UI built with Tailwind CSS, Radix primitives, and Framer Motion.
@@ -63,14 +63,15 @@ flowchart LR
 
 ### Document workflow
 
-1. The browser requests a presigned upload URL.
-2. The PDF is uploaded to the user's private Storage directory.
-3. The server submits the file to LlamaCloud and polls the parsing job.
-4. Parsed Markdown is divided into page-level content.
-5. Google model calls enrich the document and page metadata.
-6. Voyage creates embeddings for retrieval.
-7. Document metadata and vectors are stored in Supabase.
-8. During chat, the model can call `searchUserDocument` and cite matching pages.
+1. An authenticated upload request receives a unique canonical Storage path and signed upload URL. PDF limits are 25 MiB per file and 150 MiB total user storage; uploads do not replace existing objects.
+2. The server validates ownership and the uploaded PDF before submitting it to LlamaCloud. Signed job tokens bind parsing jobs to the user and canonical Storage path.
+3. Processing fetches the LlamaParse v1 JSON result and maps explicit page numbers to parser-reported page positions, preserving blank pages. Markdown separators do not define pages; physical PDF alignment remains pending Phase8 validation.
+4. A unique document reservation prevents repeated or conflicting processing from replacing existing documents. The document remains `processing` during Google metadata enrichment and Voyage indexing.
+5. Embeddings must contain 1,024 finite values. Privileged finalization checks the expected nonblank page set before marking the document `ready`; failures best-effort mark it `failed`. Retrieval excludes unfinished documents.
+6. During chat, `searchUserDocument` retrieves user-owned ready pages with a total 40,000-character document context bound and page citations. Live physical citation alignment still requires Phase8 validation.
+7. Incremental chat persistence uses stable identities for messages and parts and makes save failures observable. Reload behavior and live failure paths remain Phase8 checks.
+
+Processing is bounded within the request, with no durable background worker, automatic resume, or automatic model retries. Interrupted requests may leave an unsearchable `processing` document. See [Document processing state](docs/V1_PROCESSING.md) before deliberately deleting and re-uploading an unfinished document.
 
 ## Tech stack
 
@@ -90,14 +91,15 @@ flowchart LR
 
 ## Quick start
 
-See the [V1 local runtime guide](docs/v1-local-runtime.md) for configuration preservation, commands, and verified local acceptance results.
+See the [V1 local runtime guide](docs/v1-local-runtime.md) for configuration preservation, commands, and historical local receipts. The [validation checklist](docs/V1_VALIDATION.md) separates offline evidence from pending live acceptance. Live credentials are deferred to Phase8; they are not needed to review this code checkpoint.
 
 ### Prerequisites
 
 - Node.js 24 LTS
 - npm 11
 - A Supabase project
-- LlamaCloud and Voyage API keys for document ingestion
+- Google, LlamaCloud and Voyage API keys for document ingestion when Phase8 begins
+- A dedicated document job signing secret when Phase8 begins
 - At least one configured chat provider
 - Exa API key if web search is enabled
 
@@ -118,7 +120,7 @@ if (-not (Test-Path -LiteralPath .env.local)) {
 }
 ```
 
-Fill in `.env.local`, configure the Supabase schema, and start the development server:
+For local startup, preserve configuration and start the development server. Before live application use, complete the reviewed migration prerequisites and authorized Phase8 configuration and checks below:
 
 ```bash
 npm run dev
@@ -135,6 +137,7 @@ Preserve an existing `.env.local`; copy `.env.example` only if `.env.local` is a
 | `SUPABASE_URL` | Core application | Supabase project URL. |
 | `SUPABASE_ANON_KEY` | Core application | Public anonymous key used with RLS. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server upload pipeline | Server-only; bypasses RLS and must never reach the browser. |
+| `DOCUMENT_JOB_SECRET` | Document job signing | Configure a dedicated server-only secret in Phase8. The current code has a service-role fallback; use a separate secret for live validation. |
 | `LLAMA_CLOUD_API_KEY` | PDF parsing | LlamaCloud/LlamaParse access. |
 | `VOYAGE_API_KEY` | Document retrieval | Voyage embedding access. |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Google chat and current ingestion chain | Currently required by document metadata processing. |
@@ -148,17 +151,17 @@ Preserve an existing `.env.local`; copy `.env.example` only if `.env.local` is a
 
 ## Supabase setup
 
-The current schema bootstrap is located at [`database/setup.sql`](database/setup.sql). It defines the main user, chat, message-part, document, vector, RLS, Storage, and retrieval objects.
+The authoritative application schema sources are the ordered files in [`supabase/migrations`](supabase/migrations):
 
-Before applying it to a new or production project:
+1. `20260819050131_remote_schema.sql`
+2. `20260819050430_reconcile_live_application_schema.sql`
+3. `20261006232436_v1_document_processing_state.sql`
 
-1. Review it against the current Supabase schema.
-2. Confirm the `vector` and UUID-related extensions are available.
-3. Create or confirm the private `userfiles` bucket.
-4. Verify Row Level Security with two separate test users.
-5. Reconcile the subscription/role fields used by the application with the SQL file.
+[`database/setup.sql`](database/setup.sql) is historical reference, not the current setup recipe. Review the ordered migrations against the target schema and migration history, including extensions, grants, RLS, private `userfiles` Storage policies, and application types.
 
-The SQL file is part of the recovered baseline and is being converted into reproducible migrations as part of the stabilization roadmap.
+For an existing backend with valuable data, inspect and back up its schema and data before review and separately authorized migration application. Never reset it, automatically delete or deduplicate rows, or reindex legacy documents. Duplicate legacy Storage paths require manual review; the processing-state migration fails transactionally on those conflicts.
+
+The processing-state migration has not been applied live at this checkpoint. Current code requires it before live use. Reviewed application migrations are a Phase8 prerequisite; setting credentials alone does not satisfy that prerequisite. Verify schema, grants, ownership, and Storage access using two accounts after an explicitly authorized application. See [V1 validation](docs/V1_VALIDATION.md).
 
 ## Repository structure
 
@@ -169,7 +172,8 @@ app/
 ├── @modal/                   # intercepted authentication modals
 └── api/                      # chat, models, uploads, processing, preview proxies
 components/                   # shared and UI components
-database/setup.sql            # current Supabase schema bootstrap
+database/setup.sql            # historical schema reference
+supabase/migrations/          # authoritative ordered application migrations
 hooks/                        # reusable React hooks
 lib/                          # Supabase clients and shared services
 public/                       # static assets
@@ -186,36 +190,30 @@ proxy.ts                      # Supabase session refresh proxy
 | `npm run build` | Create a production Next.js build. |
 | `npm run start` | Run the production server. |
 | `npm run lint` | Run ESLint across JavaScript and TypeScript files. |
+| `npm run typecheck` | Check TypeScript without emitting files. |
+| `npm run test:offline` | Run all eight offline source/mock regression suites; script and CI step accepted in merged [PR23](https://github.com/desanv01/ai-chatbot-with-rag/pull/23). |
 
-## Current baseline
+## Current checkpoint
 
-This first public checkpoint intentionally preserves the recovered application state so future fixes have a clear starting point.
+The original lint and type/build failures are repaired. Phase1 local lint, type checking, production build, and startup receipts are recorded in the [runtime guide](docs/v1-local-runtime.md). CI runs all eight offline suites, lint, type checking, and a build with non-secret placeholders; that build fixture establishes compilation only and must not be deployed.
 
-Known baseline issues include:
+The current implementation includes provider/model credential gating, signed canonical document jobs and paths, bounded PDF uploads, unique processing reservations, protected `processing`/`ready`/`failed` readiness, explicit JSON page mapping preserving blanks, finite 1,024-dimension embedding validation, bounded retrieval, and stable incremental persistence with observable save failures. Missing optional OpenAI, Anthropic, or Exa credentials gate the corresponding features; Google remains required for the current ingestion chain.
 
-- TypeScript/build failure in the document-chat AI tool schema.
-- ESLint configuration failure before source linting begins.
-- Inconsistent document identity between uploaded Storage paths, metadata, preview, and deletion.
-- Processing job IDs and privileged Storage paths need stronger server-side ownership binding.
-- Public URL proxy routes require SSRF, timeout, size, content-type, and HTML-isolation controls.
-- Database SQL and generated TypeScript types have drifted.
-- Model catalogs and provider fallbacks are duplicated across routes.
-- No unit, integration, end-to-end, or CI test suite is currently present.
+The main review accepted merged [Phase6 PR23](https://github.com/desanv01/ai-chatbot-with-rag/pull/23): all eight offline source/mock suites, whole-repository lint and type checking passed locally, and pre-merge CI passed offline suites, lint, types and build in [run37548484315](https://github.com/desanv01/ai-chatbot-with-rag/actions/runs/37548484315) and [run37548488577](https://github.com/desanv01/ai-chatbot-with-rag/actions/runs/37548488577). Synthetic SQL grants, ownership, completion, and rollback checks also passed locally. Post-merge main CI [run37548674013](https://github.com/desanv01/ai-chatbot-with-rag/actions/runs/37548674013) is verified SUCCESS at merge commit `28c0eccc1cd63dbda2fad72526f4662cb1f5cc0d`. These results do not establish live Auth, RLS, Storage, parser compatibility, provider health, grounding, or persistence. The deprecated LlamaParse v1 endpoint and legacy page provenance remain unverified. There is no resumable background ingestion job.
 
-These issues are documented rather than hidden because the repository is the starting point for the repair and upgrade journey.
+See [V1 validation](docs/V1_VALIDATION.md) for accepted PR evidence and the complete Phase8 gate. V1 operational acceptance remains pending.
 
 ## Roadmap
 
-- [ ] Make type checking, linting, and production build pass.
-- [ ] Introduce canonical document and ingestion-job identities.
-- [ ] Harden upload, preview, processing, and URL-fetch authorization.
-- [ ] Convert the database bootstrap into ordered migrations.
-- [ ] Reconcile database types with the live schema.
-- [ ] Centralize provider and model configuration.
-- [ ] Add bounded concurrency, retries, and durable ingestion status.
-- [ ] Add unit, integration, RLS, and browser regression tests.
-- [ ] Add GitHub Actions quality gates.
-- [ ] Audit and document the production Supabase and Vercel configuration.
+- [x] Accept Phase0 baseline and Phase1 local runtime repair.
+- [x] Implement provider gating, canonical document/job authorization, processing state, retrieval bounds, and persistence repairs.
+- [x] Add ordered migration sources and CI lint/type/build gates.
+- [x] Document the checkpoint, evidence boundaries and Phase8 plan.
+- [x] Accept Phase6 offline suites and CI integration in merged PR23.
+- [ ] Complete main-owned Phase7 merge and CI acceptance.
+- [ ] Review and explicitly authorize Phase8 migration application and billable provider checks.
+- [ ] Complete two-account live security, ingestion, grounding, persistence, and full end-to-end validation.
+- [ ] Review release evidence and explicitly authorize any deployment separately.
 
 ## Security
 
