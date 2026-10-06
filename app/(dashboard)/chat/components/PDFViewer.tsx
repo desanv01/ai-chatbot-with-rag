@@ -22,7 +22,7 @@ export default function DocumentViewer({
     router.replace(url.pathname + url.search);
   };
 
-  const decodedFileName = decodeURIComponent(decodeBase64(fileName));
+  const decodedFileName = decodeBase64(fileName);
   const fileExtension = decodedFileName.split('.').pop()?.toLowerCase() ?? '';
   const page = Number(searchParams.get('p')) || 1;
 
