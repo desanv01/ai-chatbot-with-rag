@@ -15,8 +15,9 @@ import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 import type { SharedV2ProviderMetadata } from '@ai-sdk/provider';
 
 import { getSession } from '@/lib/server/supabase';
+import { getProviderAvailability } from '@/lib/server/provider-availability';
 import {
-  DEFAULT_CHAT_MODEL,
+  isChatModelValue,
   isGoogleChatModel,
   isGoogleFreeChatModel,
   normalizeGoogleModelId,
@@ -78,24 +79,26 @@ function isGeminiNotFoundError(err: any): boolean {
   );
 }
 
-function readSelectedModel(body: any): string {
+function readSelectedModel(body: any): string | null {
   const selectedModel =
     body?.option ||
     body?.model ||
     body?.selectedModel ||
-    body?.providerModel ||
-    DEFAULT_CHAT_MODEL;
+    body?.providerModel;
 
-  return typeof selectedModel === 'string' ? selectedModel : DEFAULT_CHAT_MODEL;
+  return typeof selectedModel === 'string' && selectedModel.trim()
+    ? selectedModel
+    : null;
 }
 
 /**
  * If GOOGLE_FREE_TIER_ONLY=true, force to a Flash model.
  * Otherwise allow Flash + Pro.
  */
-function pickSafeGoogleModel(selectedModel: string): ChatModelValue {
-  const freeOnly =
-    (process.env.GOOGLE_FREE_TIER_ONLY ?? '').toLowerCase() === 'true';
+function pickSafeGoogleModel(
+  selectedModel: string,
+  freeOnly: boolean
+): ChatModelValue {
 
   // ✅ Env must also be preview IDs (we normalize anyway)
   const defaultModel = normalizeGoogleModelId(
@@ -145,16 +148,10 @@ function getModel(selectedModel: ChatModelValue) {
     default: {
       // Any gemini selection lands here
       if (selectedModel.toLowerCase().includes('gemini')) {
-        const safeGoogleModel = pickSafeGoogleModel(selectedModel);
-        return google(safeGoogleModel);
+        return google(selectedModel);
       }
 
-      console.error(
-        'Invalid model selected:',
-        selectedModel,
-        'Falling back to gpt-5.1'
-      );
-      return openai('gpt-5.1');
+      throw new Error('Invalid model selected.');
     }
   }
 }
@@ -183,17 +180,47 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const rawSelectedModel = readSelectedModel(body);
+  const availability = getProviderAvailability();
+  const requestedModel = readSelectedModel(body);
+  const rawSelectedModel = requestedModel ?? availability.defaultModel;
   const userId = session.sub;
 
   // Normalize legacy aliases and enforce the shared model allowlist.
   const normalizedIncoming = normalizeGoogleModelId(rawSelectedModel);
-  const safeIncoming = sanitizeChatModel(rawSelectedModel);
+  if (requestedModel !== null && !isChatModelValue(normalizedIncoming)) {
+    return NextResponse.json(
+      {
+        message:
+          'The selected chat model is unsupported. Choose an available model.'
+      },
+      { status: 400 }
+    );
+  }
+  if (!availability.defaultModel) {
+    return NextResponse.json(
+      {
+        message:
+          'Chat is unavailable. Ask the administrator to configure a chat provider.'
+      },
+      { status: 503 }
+    );
+  }
+  const safeIncoming = sanitizeChatModel(normalizedIncoming);
 
   // ✅ Then apply free-tier enforcement for Gemini
   const selectedModel = safeIncoming.toLowerCase().includes('gemini')
-    ? pickSafeGoogleModel(safeIncoming)
+    ? pickSafeGoogleModel(safeIncoming, availability.googleFreeOnly)
     : safeIncoming;
+
+  if (!availability.models.some((model) => model.value === selectedModel)) {
+    return NextResponse.json(
+      {
+        message:
+          'The selected chat model is unavailable. Choose a configured model and try again.'
+      },
+      { status: 400 }
+    );
+  }
 
   const providerOptions: SharedV2ProviderMetadata = {};
 
@@ -242,10 +269,12 @@ export async function POST(req: NextRequest) {
     maxRetries: 0,
 
     tools: {
-      websiteSearchTool,
+      ...(availability.webSearch ? { websiteSearchTool } : {}),
       searchUserDocument: searchUserDocument({ userId })
     },
-    activeTools: ['websiteSearchTool', 'searchUserDocument'],
+    activeTools: availability.webSearch
+      ? ['websiteSearchTool', 'searchUserDocument']
+      : ['searchUserDocument'],
     stopWhen: stepCountIs(5),
 
     onStepFinish: async (stepResult) => {
