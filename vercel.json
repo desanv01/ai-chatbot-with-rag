@@ -10,6 +10,7 @@
       "v1/phase4-processing-state": false,
       "v1/phase5-retrieval": false,
       "v1/phase5-persistence": false,
+      "v1/phase5-page-provenance": false,
       "agent/reapply-document-processing-hardening": false
     }
   }
