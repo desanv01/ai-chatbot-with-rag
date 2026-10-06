@@ -12,7 +12,8 @@
       "v1/phase5-retrieval": false,
       "v1/phase5-persistence": false,
       "v1/phase5-page-provenance": false,
-      "agent/reapply-document-processing-hardening": false
+      "agent/reapply-document-processing-hardening": false,
+      "v1/phase6-offline-regressions": false
     }
   }
 }

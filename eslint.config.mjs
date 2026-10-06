@@ -112,5 +112,22 @@ export default defineConfig([
     }
   },
 
+  {
+    files: ['tests/offline/**/*.cjs'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: globals.node
+    },
+    rules: {
+      ...tseslint.configs.disableTypeChecked.rules,
+      '@typescript-eslint/no-require-imports': 'off',
+      // Fixtures use explicit no-op SDK/hook callbacks.
+      '@typescript-eslint/no-empty-function': [
+        'error',
+        { allow: ['methods', 'asyncMethods', 'arrowFunctions'] }
+      ]
+    }
+  },
   prettierConfig
 ]);
