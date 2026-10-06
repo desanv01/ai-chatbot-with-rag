@@ -31,6 +31,9 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      - name: Run offline regressions
+        run: npm run test:offline
+
       # Validates compilation and prerendering only, not service health.
       # Never deploy this fixture or its build output.
       - name: Build with non-secret placeholders

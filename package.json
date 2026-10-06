@@ -26,7 +26,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
-    "typecheck": "tsc --noEmit --incremental false"
+    "typecheck": "tsc --noEmit --incremental false",
+    "test:offline": "node tests/offline/run.cjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.15",
