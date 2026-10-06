@@ -11,6 +11,11 @@ const MAX_CONTENT_CHARS = 40000; // ~10k tokens (approx)
 const EMBEDDING_DIMENSIONS = 1024;
 const RETRIEVAL_FAILURE = 'Document retrieval failed. Please try again.';
 
+function boundedSignal(requestSignal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(30_000);
+  return requestSignal ? AbortSignal.any([requestSignal, timeout]) : timeout;
+}
+
 interface SearchUserDocumentProps {
   userId: string;
 }
@@ -46,7 +51,7 @@ type SearchUserDocumentOutput = z.infer<typeof searchUserDocumentOutputSchema>;
 /**
  * Embed query function (Voyage)
  */
-async function embedQuery(text: string) {
+async function embedQuery(text: string, requestSignal?: AbortSignal) {
   const trimmed = text.trim();
   if (!trimmed) throw new Error('Document search query must not be empty.');
 
@@ -54,6 +59,8 @@ async function embedQuery(text: string) {
     const { embedding } = await embed({
       model: embeddingModel,
       value: trimmed,
+      maxRetries: 0,
+      abortSignal: boundedSignal(requestSignal),
       providerOptions: {
         voyage: {
           inputType: 'query',
@@ -76,7 +83,7 @@ function validateQueryEmbedding(embedding: number[]) {
   if (
     !Array.isArray(embedding) ||
     embedding.length !== EMBEDDING_DIMENSIONS ||
-    !embedding.every(
+    !Array.from(embedding).every(
       (value) => typeof value === 'number' && Number.isFinite(value)
     )
   ) {
@@ -101,14 +108,18 @@ function getLastUserText(messages: ModelMessage[]): string {
 /**
  * Get the user's document IDs
  */
-async function getUserDocumentIds(userId: string): Promise<string[]> {
+async function getUserDocumentIds(
+  userId: string,
+  requestSignal?: AbortSignal
+): Promise<string[]> {
   const supabase = await createServerSupabaseClient();
 
   const { data, error } = await supabase
     .from('user_documents')
     .select('id')
     .eq('user_id', userId)
-    .eq('processing_status', 'ready');
+    .eq('processing_status', 'ready')
+    .abortSignal(boundedSignal(requestSignal));
 
   if (error) {
     console.error('Error fetching user documents:', error);
@@ -126,7 +137,8 @@ async function querySupabaseVectors(
   userId: string,
   documentIds: string[],
   topK: number,
-  similarityThreshold: number
+  similarityThreshold: number,
+  requestSignal?: AbortSignal
 ) {
   validateQueryEmbedding(queryEmbedding);
   const supabase = await createServerSupabaseClient();
@@ -134,13 +146,15 @@ async function querySupabaseVectors(
   // Your RPC expects a string like "[1,2,3]"
   const embeddingString = `[${queryEmbedding.join(',')}]`;
 
-  const { data: matches, error } = await supabase.rpc('match_documents', {
-    query_embedding: embeddingString,
-    match_count: topK,
-    filter_user_id: userId,
-    file_ids: documentIds,
-    similarity_threshold: similarityThreshold
-  });
+  const { data: matches, error } = await supabase
+    .rpc('match_documents', {
+      query_embedding: embeddingString,
+      match_count: topK,
+      filter_user_id: userId,
+      file_ids: documentIds,
+      similarity_threshold: similarityThreshold
+    })
+    .abortSignal(boundedSignal(requestSignal));
 
   if (error) {
     console.error('Error querying vectors:', error);
@@ -168,12 +182,12 @@ export const searchUserDocument = ({ userId }: SearchUserDocumentProps) =>
       "Search through the user's uploaded documents to find relevant information. Use this when the user asks about their documents, mentions an uploaded file, or the answer likely exists inside their PDFs.",
     inputSchema: zodSchema(searchUserDocumentInputSchema),
     outputSchema: zodSchema(searchUserDocumentOutputSchema),
-    execute: async ({ query }, { messages }) => {
+    execute: async ({ query }, { messages, abortSignal }) => {
       const toolQuery = query.trim();
       if (!toolQuery)
         throw new Error('Document search query must not be empty.');
 
-      const documentIds = await getUserDocumentIds(userId);
+      const documentIds = await getUserDocumentIds(userId, abortSignal);
 
       if (documentIds.length === 0) {
         return {
@@ -187,10 +201,12 @@ export const searchUserDocument = ({ userId }: SearchUserDocumentProps) =>
       const queries = [toolQuery];
       if (userMessage && userMessage !== toolQuery) queries.push(userMessage);
 
-      const queryEmbeddings = await Promise.all(queries.map(embedQuery));
+      const queryEmbeddings = await Promise.all(
+        queries.map((text) => embedQuery(text, abortSignal))
+      );
       const resultGroups = await Promise.all(
         queryEmbeddings.map((embedding) =>
-          querySupabaseVectors(embedding, userId, documentIds, 30, 0.3)
+          querySupabaseVectors(embedding, userId, documentIds, 30, 0.3, abortSignal)
         )
       );
 

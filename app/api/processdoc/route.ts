@@ -11,6 +11,7 @@ import type { TablesInsert } from '@/types/database';
 import { revalidatePath } from 'next/cache';
 import { isUserStoragePath } from '@/lib/document-path';
 import { verifyDocumentJobToken } from '@/lib/server/document-job-token';
+import { normalizeLlamaParsePages } from '@/lib/llamaparse-pages';
 
 export const dynamic = 'force-dynamic';
 
@@ -347,11 +348,12 @@ export async function POST(req: NextRequest) {
     }
     signal.throwIfAborted();
 
-    const markdownResponse = await fetch(
+    const parsingResponse = await fetch(
       `https://api.cloud.llamaindex.ai/api/v1/parsing/job/${encodeURIComponent(
         jobId
-      )}/result/markdown`,
+      )}/result/json`,
       {
+        method: 'GET',
         headers: {
           Authorization: `Bearer ${process.env.LLAMA_CLOUD_API_KEY}`,
           Accept: 'application/json'
@@ -361,35 +363,28 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    if (!markdownResponse.ok) {
+    if (!parsingResponse.ok) {
       console.error(
-        'Failed to get Markdown result:',
-        markdownResponse.statusText
+        'Failed to get document parsing result:',
+        parsingResponse.statusText
       );
       return NextResponse.json(
-        { error: 'Failed to get Markdown result' },
+        { error: 'Failed to get document parsing result' },
         { status: 502 }
       );
     }
 
-    // Parse the JSON response to extract just the markdown property
-    const responseJson = await markdownResponse.json();
-
-    // Extract the clean markdown content from the response
-    const markdownContent: string =
-      responseJson && typeof responseJson.markdown === 'string'
-        ? responseJson.markdown
-        : '';
-
-    if (!markdownContent.trim()) {
+    let pages: string[];
+    try {
+      pages = normalizeLlamaParsePages(await parsingResponse.json());
+    } catch (error) {
+      signal.throwIfAborted();
+      console.error('Invalid document parsing result:', error);
       return NextResponse.json(
-        { error: 'LlamaParse returned no markdown content' },
+        { error: 'LlamaParse returned invalid document pages' },
         { status: 422 }
       );
     }
-
-    // Preserve split-page positions, including blanks, for exact finalization.
-    const pages = markdownContent.split('\n---\n').map((page) => page.trim());
 
     if (!pages.some((page) => page.trim())) {
       return NextResponse.json(
