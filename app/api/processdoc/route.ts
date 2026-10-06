@@ -9,7 +9,7 @@ import {
 import { voyage } from 'voyage-ai-provider';
 import type { TablesInsert } from '@/types/database';
 import { revalidatePath } from 'next/cache';
-import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
+import { isUserStoragePath } from '@/lib/document-path';
 import { verifyDocumentJobToken } from '@/lib/server/document-job-token';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +20,14 @@ const embeddingModel = voyage('voyage-3-large');
 
 type DocumentVectorRecord = TablesInsert<'user_documents_vec'>;
 
+class DocumentFilenameConflict extends Error {
+  constructor() {
+    super(
+      'A document with this filename already exists. Choose a different filename.'
+    );
+  }
+}
+
 async function processFile(
   pages: string[],
   fileName: string,
@@ -28,6 +36,28 @@ async function processFile(
 ) {
   if (pages.length === 0) {
     throw new Error('LlamaParse returned no document pages');
+  }
+
+  const supabase = createAdminClient();
+
+  const { data: previousDocument, error: previousDocumentError } =
+    await supabase
+      .from('user_documents')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('title', fileName.trim())
+      .maybeSingle();
+
+  if (previousDocumentError) {
+    console.error(
+      'Failed to inspect existing document:',
+      previousDocumentError
+    );
+    throw new Error('Could not check document filename');
+  }
+
+  if (previousDocument) {
+    throw new DocumentFilenameConflict();
   }
 
   let selectedDocuments = pages;
@@ -53,67 +83,32 @@ async function processFile(
 
   const pageChunks = chunks(pages, processingBatchSize);
 
-  const supabase = createAdminClient();
-
-  const { data: previousDocument, error: previousDocumentError } =
-    await supabase
-      .from('user_documents')
-      .select('id, file_path')
-      .eq('user_id', userId)
-      .eq('title', fileName.trim())
-      .maybeSingle();
-
-  if (previousDocumentError) {
-    throw new Error(
-      `Failed to inspect existing document: ${previousDocumentError.message}`
-    );
-  }
-
-  // Upsert the document metadata
+  // Insert a new document; the unique constraint also rejects concurrent duplicates.
   const { error: docError, data: docData } = await supabase
     .from('user_documents')
-    .upsert(
-      {
-        user_id: userId,
-        title: fileName.trim(),
-        ai_title: output.descriptiveTitle,
-        ai_description: output.shortDescription,
-        ai_maintopics: output.mainTopics,
-        ai_keyentities: output.keyEntities,
-        total_pages: totalPages,
-        file_path: filePath,
-        created_at: new Date().toISOString()
-      },
-      {
-        onConflict: 'user_id,title'
-      }
-    )
+    .insert({
+      user_id: userId,
+      title: fileName.trim(),
+      ai_title: output.descriptiveTitle,
+      ai_description: output.shortDescription,
+      ai_maintopics: output.mainTopics,
+      ai_keyentities: output.keyEntities,
+      total_pages: totalPages,
+      file_path: filePath,
+      created_at: new Date().toISOString()
+    })
     .select('id')
     .single();
 
   if (docError) {
-    console.error('Error upserting document metadata:', docError);
+    if (docError.code === '23505') {
+      throw new DocumentFilenameConflict();
+    }
+    console.error('Error inserting document metadata:', docError);
     throw new Error(`Failed to create document record: ${docError.message}`);
   }
 
-  if (
-    previousDocument &&
-    previousDocument.file_path !== filePath &&
-    isUserStoragePath(previousDocument.file_path, userId)
-  ) {
-    const { error: oldFileError } = await supabase.storage
-      .from(USER_FILES_BUCKET)
-      .remove([previousDocument.file_path]);
-
-    if (oldFileError) {
-      console.warn(
-        'Could not remove the replaced document object:',
-        oldFileError
-      );
-    }
-  }
-
-  // Get the document ID (either from upsert response or the generated UUID)
+  // Use the ID of the newly inserted document.
   const finalDocumentId = docData.id;
 
   // Now process each page chunk and create vector entries
@@ -230,18 +225,6 @@ async function processFile(
   if (failedPages.length > 0) {
     throw new Error(
       `Document processing failed for ${failedPages.length} page(s)`
-    );
-  }
-
-  const { error: staleVectorError } = await supabase
-    .from('user_documents_vec')
-    .delete()
-    .eq('document_id', finalDocumentId)
-    .gt('page_number', totalPages);
-
-  if (staleVectorError) {
-    throw new Error(
-      `Failed to remove stale document vectors: ${staleVectorError.message}`
     );
   }
 }
@@ -392,6 +375,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: 'SUCCESS' });
   } catch (error) {
     console.error('Error in POST request:', error);
+    if (error instanceof DocumentFilenameConflict) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
