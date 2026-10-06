@@ -6,25 +6,40 @@ import { createServerSupabaseClient } from '@/lib/server/server';
 
 export const dynamic = 'force-dynamic';
 
+function isEmailOtpType(type: string | null): type is EmailOtpType {
+  return (
+    type !== null &&
+    ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'email'].includes(
+      type
+    )
+  );
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const token_hash_searchParam = searchParams.get('token_hash');
   const code = searchParams.get('code');
-  const type = searchParams.get('type') as EmailOtpType | null;
+  const type = searchParams.get('type');
   const next = getSafeRedirectPath(searchParams.get('next'), '/');
   let redirectTo = new URL(next, request.url);
 
   const token_hash = code ?? token_hash_searchParam;
 
-  if (token_hash && type) {
-    const supabase = await createServerSupabaseClient();
+  if (token_hash && isEmailOtpType(type)) {
+    let authenticated = false;
 
-    const { data } = await supabase.auth.verifyOtp({
-      type,
-      token_hash
-    });
+    try {
+      const supabase = await createServerSupabaseClient();
+      const { data, error } = await supabase.auth.verifyOtp({
+        type,
+        token_hash
+      });
+      authenticated = Boolean(!error && data.user && data.session);
+    } catch {
+      authenticated = false;
+    }
 
-    if (data) {
+    if (authenticated) {
       redirectTo.searchParams.set('message', 'You can now sign in.');
     } else {
       // Instead of redirecting to error page, go to root with error message
