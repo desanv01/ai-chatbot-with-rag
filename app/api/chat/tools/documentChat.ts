@@ -1,4 +1,4 @@
-import { tool, zodSchema } from 'ai';
+import { tool, zodSchema, type ModelMessage } from 'ai';
 import { z } from 'zod';
 import { embed } from 'ai';
 import { voyage } from 'voyage-ai-provider';
@@ -8,6 +8,8 @@ const embeddingModel = voyage.textEmbeddingModel('voyage-3-large');
 
 // Rough token estimate: ~4 characters per token
 const MAX_CONTENT_CHARS = 40000; // ~10k tokens (approx)
+const EMBEDDING_DIMENSIONS = 1024;
+const RETRIEVAL_FAILURE = 'Document retrieval failed. Please try again.';
 
 interface SearchUserDocumentProps {
   userId: string;
@@ -45,25 +47,53 @@ type SearchUserDocumentOutput = z.infer<typeof searchUserDocumentOutputSchema>;
  * Embed query function (Voyage)
  */
 async function embedQuery(text: string) {
-  const trimmed = (text ?? '').toString().trim();
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error('Document search query must not be empty.');
 
-  // If empty, avoid calling embedding provider
-  if (!trimmed) return new Array(1024).fill(0);
-
-  const { embedding } = await embed({
-    model: embeddingModel,
-    value: trimmed,
-    providerOptions: {
-      voyage: {
-        inputType: 'query',
-        truncation: true, // safer for long user queries
-        outputDimension: 1024,
-        outputDtype: 'int8'
+  try {
+    const { embedding } = await embed({
+      model: embeddingModel,
+      value: trimmed,
+      providerOptions: {
+        voyage: {
+          inputType: 'query',
+          truncation: true, // safer for long user queries
+          outputDimension: EMBEDDING_DIMENSIONS,
+          outputDtype: 'int8'
+        }
       }
-    }
-  });
+    });
 
-  return embedding;
+    validateQueryEmbedding(embedding);
+    return embedding;
+  } catch (error) {
+    console.error('Error embedding document query:', error);
+    throw new Error(RETRIEVAL_FAILURE);
+  }
+}
+
+function validateQueryEmbedding(embedding: number[]) {
+  if (
+    !Array.isArray(embedding) ||
+    embedding.length !== EMBEDDING_DIMENSIONS ||
+    !embedding.every((value) => typeof value === 'number' && Number.isFinite(value))
+  ) {
+    throw new Error(RETRIEVAL_FAILURE);
+  }
+}
+
+function getLastUserText(messages: ModelMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.role !== 'user') continue;
+    if (typeof message.content === 'string') return message.content.trim();
+    return message.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n')
+      .trim();
+  }
+  return '';
 }
 
 /**
@@ -79,7 +109,7 @@ async function getUserDocumentIds(userId: string): Promise<string[]> {
 
   if (error) {
     console.error('Error fetching user documents:', error);
-    return [];
+    throw new Error(RETRIEVAL_FAILURE);
   }
 
   return data?.map((doc) => doc.id) ?? [];
@@ -95,6 +125,7 @@ async function querySupabaseVectors(
   topK: number,
   similarityThreshold: number
 ) {
+  validateQueryEmbedding(queryEmbedding);
   const supabase = await createServerSupabaseClient();
 
   // Your RPC expects a string like "[1,2,3]"
@@ -110,7 +141,7 @@ async function querySupabaseVectors(
 
   if (error) {
     console.error('Error querying vectors:', error);
-    throw error;
+    throw new Error(RETRIEVAL_FAILURE);
   }
 
   return (matches ?? []).map((match: any) => ({
@@ -135,6 +166,9 @@ export const searchUserDocument = ({ userId }: SearchUserDocumentProps) =>
     inputSchema: zodSchema(searchUserDocumentInputSchema),
     outputSchema: zodSchema(searchUserDocumentOutputSchema),
     execute: async ({ query }, { messages }) => {
+      const toolQuery = query.trim();
+      if (!toolQuery) throw new Error('Document search query must not be empty.');
+
       const documentIds = await getUserDocumentIds(userId);
 
       if (documentIds.length === 0) {
@@ -145,43 +179,40 @@ export const searchUserDocument = ({ userId }: SearchUserDocumentProps) =>
         };
       }
 
-      const toolQuery = (query ?? '').toString();
-      const userMessage = messages[messages.length - 1]?.content?.toString() ?? '';
+      const userMessage = getLastUserText(messages);
+      const queries = [toolQuery];
+      if (userMessage && userMessage !== toolQuery) queries.push(userMessage);
 
-      // Embed both in parallel
-      const [toolQueryEmbedding, userMessageEmbedding] = await Promise.all([
-        embedQuery(toolQuery),
-        embedQuery(userMessage)
-      ]);
+      const queryEmbeddings = await Promise.all(queries.map(embedQuery));
+      const resultGroups = await Promise.all(
+        queryEmbeddings.map((embedding) =>
+          querySupabaseVectors(embedding, userId, documentIds, 30, 0.3)
+        )
+      );
 
-      // Vector search both embeddings in parallel
-      const [toolQueryResults, userMessageResults] = await Promise.all([
-        querySupabaseVectors(toolQueryEmbedding, userId, documentIds, 30, 0.3),
-        querySupabaseVectors(userMessageEmbedding, userId, documentIds, 30, 0.3)
-      ]);
-
-      // Combine + dedupe (by title+page)
-      const allSearchResults = [...toolQueryResults, ...userMessageResults];
+      // Keep the highest-similarity occurrence of each returned vector/page.
+      const allSearchResults = resultGroups.flat();
+      allSearchResults.sort((a, b) => b.similarity - a.similarity);
       const seenKeys = new Set<string>();
 
       const searchResults = allSearchResults.filter((item) => {
-        const key = `${item.title}-${item.page}`;
+        const key =
+          item.id != null
+            ? `id:${item.id}`
+            : `page:${JSON.stringify([item.title, item.page])}`;
         if (seenKeys.has(key)) return false;
         seenKeys.add(key);
         return true;
       });
 
-      // Sort by similarity
-      searchResults.sort((a, b) => b.similarity - a.similarity);
+      const contextArray: SearchUserDocumentOutput['context'] = [];
+      let remainingChars = MAX_CONTENT_CHARS;
+      for (const result of searchResults) {
+        if (remainingChars <= 0) break;
+        const content = (result.text || '').slice(0, remainingChars);
+        remainingChars -= content.length;
 
-      const contextArray = searchResults.map((result) => {
-        let content = result.text || '';
-
-        if (content.length > MAX_CONTENT_CHARS) {
-          content = content.slice(0, MAX_CONTENT_CHARS);
-        }
-
-        return {
+        contextArray.push({
           type: 'document',
           title: result.title,
           aiTitle: result.ai_title || undefined,
@@ -189,15 +220,16 @@ export const searchUserDocument = ({ userId }: SearchUserDocumentProps) =>
           totalPages: result.totalPages ? Number(result.totalPages) : undefined,
           content,
           // Keep your existing “pdf link” pattern
-          pdfLink: `<?pdf=${result.title.trim()}&p=${Number(result.page ?? 1)}>`
-        };
-      });
+          pdfLink: `<?pdf=${encodeURIComponent(result.title.trim())}&p=${Number(result.page ?? 1)}>`
+        });
+      }
 
       const instructions = `
 Using the extracted document context below, answer the user's question clearly and accurately.
 
 IMPORTANT: Every time you use information from the PDFs, you MUST cite it using a Markdown link in this format:
 [Short description](<?pdf=Document_Title&p=X>)
+Use the exact pdfLink provided for each result; filenames in these links are URL-encoded.
 
 Examples:
 - [Definition](<?pdf=MyDoc.pdf&p=2>)

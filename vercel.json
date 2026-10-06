@@ -5,6 +5,7 @@
       "main": false,
       "v1/phase0-baseline": false,
       "v1/phase1-runtime": false,
+      "v1/phase5-retrieval": false,
       "agent/reapply-document-processing-hardening": false
     }
   }
