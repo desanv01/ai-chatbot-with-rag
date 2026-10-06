@@ -28,7 +28,7 @@ import {
 
 import { ChatHistoryButton } from './ChatHistoryButton';
 import Link from 'next/link';
-import { CHAT_MODEL_OPTIONS, type ChatModelOption } from '@/lib/model-config';
+import type { ChatModelOption } from '@/lib/model-config';
 
 type ChatHelpers = ReturnType<typeof useChat>;
 
@@ -42,10 +42,11 @@ interface MessageInputProps {
 }
 
 type ModelsApiResponse = {
-  defaultModel: string;
+  defaultModel: string | null;
   googleFreeOnly: boolean;
   providers: { openai: boolean; anthropic: boolean; google: boolean };
   models: ChatModelOption[];
+  webSearchConfigured: boolean;
 };
 
 // FilePreview component stays the same
@@ -133,15 +134,18 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [input, setInput] = useState('');
 
-  // ✅ Option B: fetch allowed models from server
-  const [modelOptions, setModelOptions] = useState<ChatModelOption[]>([
-    ...CHAT_MODEL_OPTIONS
-  ]);
+  const [modelOptions, setModelOptions] = useState<ChatModelOption[]>([]);
+  const [modelsStatus, setModelsStatus] = useState<'loading' | 'ready' | 'error'>(
+    'loading'
+  );
+  const [modelsLoadAttempt, setModelsLoadAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadModels() {
+      setModelsStatus('loading');
+      setModelOptions([]);
       try {
         const res = await fetch('/api/models', { cache: 'no-store' });
         if (!res.ok) throw new Error(`Failed to load models: ${res.status}`);
@@ -150,17 +154,24 @@ const MessageInput: React.FC<MessageInputProps> = ({
         if (cancelled) return;
 
         const serverModels = Array.isArray(data.models) ? data.models : [];
+        setModelOptions(serverModels);
+        setModelsStatus('ready');
         if (serverModels.length > 0) {
-          setModelOptions(serverModels);
 
           // If cookie contains an old/hidden model, auto-switch to server default
           const allowed = new Set<string>(serverModels.map((m) => m.value));
           if (!allowed.has(selectedOption)) {
-            handleOptionChange(data.defaultModel || serverModels[0].value);
+            handleOptionChange(
+              data.defaultModel && allowed.has(data.defaultModel)
+                ? data.defaultModel
+                : serverModels[0].value
+            );
           }
         }
       } catch (err) {
-        // keep fallback
+        if (cancelled) return;
+        setModelOptions([]);
+        setModelsStatus('error');
         console.warn(err);
       }
     }
@@ -170,14 +181,28 @@ const MessageInput: React.FC<MessageInputProps> = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [modelsLoadAttempt]);
+
+  const modelAvailable =
+    modelsStatus === 'ready' &&
+    modelOptions.some((option) => option.value === selectedOption);
+  const canSend = modelAvailable && (status === 'ready' || status === 'error');
+  const modelStatusText =
+    modelsStatus === 'loading'
+      ? 'Loading models...'
+      : modelsStatus === 'error'
+        ? 'Models unavailable — click to retry'
+        : modelOptions.length === 0
+          ? 'Chat unavailable — no models configured'
+          : null;
 
   const selectedLabel = useMemo(() => {
     return (
+      modelStatusText ??
       modelOptions.find((o) => o.value === selectedOption)?.label ??
       selectedOption
     );
-  }, [modelOptions, selectedOption]);
+  }, [modelOptions, selectedOption, modelStatusText]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -188,6 +213,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
       // newline
     } else if (event.key === 'Enter') {
       event.preventDefault();
+      if (!canSend) return;
       handleFormSubmit(event);
     }
   };
@@ -238,6 +264,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSend) return;
     if (!input.trim() && attachedFiles.length === 0) return;
 
     const parts: UIMessagePart<ChatHelpers, UITools>[] = [
@@ -276,8 +303,8 @@ const MessageInput: React.FC<MessageInputProps> = ({
         value={input}
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
-        placeholder="Type your message..."
-        disabled={status !== 'ready'}
+        placeholder={modelStatusText ?? 'Type your message...'}
+        disabled={!canSend}
         className="w-full pt-3 pb-1.5 min-h-0 max-h-40 resize-none border-0 shadow-none focus:ring-0 focus-visible:ring-0 focus:outline-none bg-transparent focus:bg-transparent dark:bg-transparent dark:focus:bg-transparent"
         rows={1}
       />
@@ -290,8 +317,18 @@ const MessageInput: React.FC<MessageInputProps> = ({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
+                  type="button"
                   variant="outline"
                   size="sm"
+                  disabled={
+                    modelsStatus === 'loading' ||
+                    (modelsStatus === 'ready' && modelOptions.length === 0)
+                  }
+                  onClick={() => {
+                    if (modelsStatus === 'error') {
+                      setModelsLoadAttempt((attempt) => attempt + 1);
+                    }
+                  }}
                   className="w-full h-8 justify-between text-xs"
                 >
                   <span className="truncate">{selectedLabel}</span>
@@ -330,7 +367,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
               variant="ghost"
               onClick={() => fileInputRef.current?.click()}
               className="h-8 w-8 sm:h-10 sm:w-10 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors border border-primary/30 rounded-lg cursor-pointer"
-              disabled={status !== 'ready'}
+              disabled={!canSend}
             >
               <Paperclip className="text-primary w-5 h-5 sm:w-6 sm:h-6" />
             </Button>
@@ -364,7 +401,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
               type="submit"
               size="icon"
               variant="ghost"
-              disabled={!input.trim() && attachedFiles.length === 0}
+              disabled={
+                !canSend || (!input.trim() && attachedFiles.length === 0)
+              }
               className="h-8 w-8 sm:h-10 sm:w-10 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors border border-primary/30 rounded-lg cursor-pointer"
             >
               <Send className="text-primary w-5 h-5 sm:w-8 sm:h-8" />
