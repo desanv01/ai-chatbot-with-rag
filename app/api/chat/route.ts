@@ -253,14 +253,39 @@ export async function POST(req: NextRequest) {
     } satisfies OpenAIResponsesProviderOptions;
   }
 
+  const modelMessages = await convertToModelMessages(messages);
+  const latestUserMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === 'user');
+  if (latestUserMessage) {
+    try {
+      await saveMessagesToDB({
+        chatSessionId,
+        userId,
+        messages: [latestUserMessage],
+        isFirstStep: true
+      });
+    } catch (error) {
+      console.error('Error saving user message to database:', error);
+      return NextResponse.json(
+        { message: 'Unable to save chat history. Please try again.' },
+        { status: 500 }
+      );
+    }
+  }
+
   let stepCount = 0;
-  let userMessageSaved = false;
   const assistantMessageId = crypto.randomUUID();
+  const assistantMessage: UIMessage = {
+    id: assistantMessageId,
+    role: 'assistant',
+    parts: []
+  };
 
   const result = streamText({
     model: getModel(selectedModel),
     system: systemPrompt,
-    messages: await convertToModelMessages(messages),
+    messages: modelMessages,
     // The request signal is the only cancellation signal the server can trust.
     // A JSON field such as body.signal is just data, not an AbortSignal.
     abortSignal: req.signal,
@@ -279,16 +304,6 @@ export async function POST(req: NextRequest) {
 
     onStepFinish: async (stepResult) => {
       try {
-        const messagesToSave: UIMessage[] = [];
-
-        if (stepCount === 0 && !userMessageSaved) {
-          const lastMessage = messages[messages.length - 1];
-          if (lastMessage) {
-            messagesToSave.push(lastMessage);
-            userMessageSaved = true;
-          }
-        }
-
         const uiMessage: UIMessage = {
           id: assistantMessageId,
           role: 'assistant',
@@ -358,14 +373,13 @@ export async function POST(req: NextRequest) {
           }
         });
 
-        if (uiMessage.parts.length > 0) messagesToSave.push(uiMessage);
+        assistantMessage.parts.push(...uiMessage.parts);
 
-        if (messagesToSave.length > 0) {
+        if (assistantMessage.parts.length > 0) {
           await saveMessagesToDB({
             chatSessionId,
             userId,
-            messages: messagesToSave,
-            isFirstStep: stepCount === 0,
+            messages: [assistantMessage],
             assistantMessageId
           });
         }
@@ -373,6 +387,7 @@ export async function POST(req: NextRequest) {
         stepCount++;
       } catch (error) {
         console.error(`Error saving step ${stepCount} to database:`, error);
+        throw new Error('Unable to save chat history. Please try again.');
       }
     },
 
@@ -397,6 +412,7 @@ export async function POST(req: NextRequest) {
   result.consumeStream();
 
   return result.toUIMessageStreamResponse({
+    generateMessageId: () => assistantMessageId,
     sendReasoning: true,
     sendSources: true,
     onError: errorHandler

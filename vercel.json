@@ -7,6 +7,7 @@
       "v1/phase1-runtime": false,
       "v1/phase3-provider-guards": false,
       "v1/phase5-retrieval": false,
+      "v1/phase5-persistence": false,
       "agent/reapply-document-processing-hardening": false
     }
   }
