@@ -11,7 +11,10 @@ const contentAnalysisSchema = z.object({
   hypothetical_question_2: z.string()
 });
 
-export const preliminaryAnswerChainAgent = async (content: string) => {
+export const preliminaryAnswerChainAgent = async (
+  content: string,
+  outerSignal?: AbortSignal
+) => {
   const SystemPrompt =
     'Given the content below, perform an analysis. Generate two preliminary answers, tag key concepts, and generate two hypothetical questions. Keep outputs relevant to the text. Answer in the same language as the input.';
 
@@ -20,7 +23,11 @@ export const preliminaryAnswerChainAgent = async (content: string) => {
     system: SystemPrompt,
     prompt: content,
     output: Output.object({ schema: contentAnalysisSchema }),
-    abortSignal: AbortSignal.timeout(15000),
+    maxRetries: 0,
+    abortSignal: AbortSignal.any([
+      AbortSignal.timeout(15_000),
+      ...(outerSignal ? [outerSignal] : [])
+    ]),
     temperature: 0
   });
 
@@ -35,7 +42,10 @@ const documentMetadataSchema = z.object({
   primaryLanguage: z.string()
 });
 
-export const generateDocumentMetadata = async (content: string) => {
+export const generateDocumentMetadata = async (
+  content: string,
+  outerSignal?: AbortSignal
+) => {
   const SystemPrompt = `
 Analyze the document content and generate helpful metadata for search and question answering.
 Answer in the same language as the input text.
@@ -46,6 +56,11 @@ Answer in the same language as the input text.
     system: SystemPrompt,
     prompt: content,
     output: Output.object({ schema: documentMetadataSchema }),
+    maxRetries: 0,
+    abortSignal: AbortSignal.any([
+      AbortSignal.timeout(15_000),
+      ...(outerSignal ? [outerSignal] : [])
+    ]),
     temperature: 0
   });
 

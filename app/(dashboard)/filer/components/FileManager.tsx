@@ -56,6 +56,8 @@ interface UserDocument {
   created_at: string;
   total_pages: number | null;
   file_path: string | null;
+  processing_status: string;
+  processing_error: string | null;
 }
 
 interface FileManagerProps {
@@ -169,6 +171,7 @@ export function FileManager({
       }, 2000);
     } catch (error) {
       if (activeJobRef.current === jobId) {
+        router.refresh();
         resetUploadState(
           error instanceof Error ? error.message : 'Error processing file.'
         );
@@ -566,6 +569,28 @@ export function FileManager({
                           </>
                         )}
                       </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {doc.processing_status === 'ready'
+                          ? 'Ready'
+                          : doc.processing_status === 'failed'
+                            ? 'Failed'
+                            : 'Processing - not searchable'}
+                      </p>
+                      {doc.processing_status === 'failed' && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {doc.processing_error?.startsWith(
+                            'Legacy document requires review.'
+                          )
+                            ? 'Review and back up this existing document before deliberately deleting it and uploading it again.'
+                            : 'Processing did not complete. Delete the unfinished document and upload it again.'}
+                        </p>
+                      )}
+                      {doc.processing_status === 'processing' && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          If processing was interrupted, delete the unfinished
+                          document and upload it again.
+                        </p>
+                      )}
                     </div>
                     <Button
                       variant="ghost"

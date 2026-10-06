@@ -23,7 +23,15 @@ type DocumentVectorRecord = TablesInsert<'user_documents_vec'>;
 class DocumentFilenameConflict extends Error {
   constructor() {
     super(
-      'A document with this filename already exists. Choose a different filename.'
+      'This filename or upload job is already registered. Choose a different filename for a new file, or delete the unfinished document and upload it again.'
+    );
+  }
+}
+
+class DocumentProcessingError extends Error {
+  constructor(stage: 'metadata' | 'indexing' | 'finalization') {
+    super(
+      `Document ${stage} failed. Delete the unfinished document and upload it again.`
     );
   }
 }
@@ -32,132 +40,138 @@ async function processFile(
   pages: string[],
   fileName: string,
   filePath: string,
-  userId: string
+  userId: string,
+  jobId: string,
+  signal: AbortSignal
 ) {
-  if (pages.length === 0) {
-    throw new Error('LlamaParse returned no document pages');
+  const expectedPageNumbers = pages.flatMap((page, index) =>
+    page.trim() ? [index + 1] : []
+  );
+  if (expectedPageNumbers.length === 0) {
+    throw new DocumentProcessingError('metadata');
   }
-
+  signal.throwIfAborted();
   const supabase = createAdminClient();
 
-  const { data: previousDocument, error: previousDocumentError } =
-    await supabase
-      .from('user_documents')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('title', fileName.trim())
-      .maybeSingle();
-
-  if (previousDocumentError) {
-    console.error(
-      'Failed to inspect existing document:',
-      previousDocumentError
-    );
-    throw new Error('Could not check document filename');
+  const { data: previousDocument, error: lookupError } = await supabase
+    .from('user_documents')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('title', fileName.trim())
+    .abortSignal(signal)
+    .maybeSingle();
+  if (lookupError) {
+    console.error('Could not check document filename:', lookupError);
+    throw new DocumentProcessingError('metadata');
   }
+  if (previousDocument) throw new DocumentFilenameConflict();
 
-  if (previousDocument) {
-    throw new DocumentFilenameConflict();
-  }
-
-  let selectedDocuments = pages;
-  if (pages.length > 19) {
-    selectedDocuments = [...pages.slice(0, 10), ...pages.slice(-10)];
-  }
-
-  const combinedDocumentContent = selectedDocuments.join('\n\n');
-  const { output } = await generateDocumentMetadata(combinedDocumentContent);
-
-  const totalPages = pages.length;
-
-  const processingBatchSize = 100;
-  const upsertBatchSize = 100;
-
-  const chunks = <T>(array: T[], size: number): T[][] => {
-    const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += size) {
-      chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
-  };
-
-  const pageChunks = chunks(pages, processingBatchSize);
-
-  // Insert a new document; the unique constraint also rejects concurrent duplicates.
-  const { error: docError, data: docData } = await supabase
+  // Reserve title, storage path and parsing job before any metadata provider call.
+  const { data: document, error: reservationError } = await supabase
     .from('user_documents')
     .insert({
       user_id: userId,
       title: fileName.trim(),
-      ai_title: output.descriptiveTitle,
-      ai_description: output.shortDescription,
-      ai_maintopics: output.mainTopics,
-      ai_keyentities: output.keyEntities,
-      total_pages: totalPages,
       file_path: filePath,
-      created_at: new Date().toISOString()
+      total_pages: pages.length,
+      processing_status: 'processing',
+      processing_job_id: jobId,
+      processing_error: null
     })
     .select('id')
+    .abortSignal(signal)
     .single();
-
-  if (docError) {
-    if (docError.code === '23505') {
+  if (reservationError || !document) {
+    if (reservationError?.code === '23505')
       throw new DocumentFilenameConflict();
-    }
-    console.error('Error inserting document metadata:', docError);
-    throw new Error(`Failed to create document record: ${docError.message}`);
+    console.error('Document reservation failed:', reservationError);
+    throw new DocumentProcessingError('metadata');
   }
 
-  // Use the ID of the newly inserted document.
-  const finalDocumentId = docData.id;
+  const documentId = document.id;
+  let stage: 'metadata' | 'indexing' | 'finalization' = 'metadata';
+  try {
+    signal.throwIfAborted();
+    const nonblankPages = pages.filter((page) => page.trim());
+    const selectedPages =
+      nonblankPages.length > 19
+        ? [...nonblankPages.slice(0, 10), ...nonblankPages.slice(-10)]
+        : nonblankPages;
+    const { output } = await generateDocumentMetadata(
+      selectedPages.join('\n\n'),
+      signal
+    );
+    signal.throwIfAborted();
+    const { data: updatedDocument, error: metadataError } = await supabase
+      .from('user_documents')
+      .update({
+        ai_title: output.descriptiveTitle,
+        ai_description: output.shortDescription,
+        ai_maintopics: output.mainTopics,
+        ai_keyentities: output.keyEntities
+      })
+      .eq('id', documentId)
+      .eq('user_id', userId)
+      .eq('processing_job_id', jobId)
+      .eq('processing_status', 'processing')
+      .select('id')
+      .abortSignal(signal)
+      .maybeSingle();
+    if (metadataError || !updatedDocument) {
+      throw new Error('Metadata update did not match a processing document');
+    }
 
-  // Now process each page chunk and create vector entries
-  const failedPages: number[] = [];
+    stage = 'indexing';
+    const processingBatchSize = 4;
+    for (let offset = 0; offset < pages.length; offset += processingBatchSize) {
+      signal.throwIfAborted();
+      const { data: processingDocument, error: stateError } = await supabase
+        .from('user_documents')
+        .select('id')
+        .eq('id', documentId)
+        .eq('user_id', userId)
+        .eq('processing_job_id', jobId)
+        .eq('processing_status', 'processing')
+        .abortSignal(signal)
+        .maybeSingle();
+      if (stateError || !processingDocument)
+        throw new Error('Document is no longer processing');
 
-  for (let chunkIndex = 0; chunkIndex < pageChunks.length; chunkIndex++) {
-    const batch = pageChunks[chunkIndex];
-    let vectorBatchRecords: DocumentVectorRecord[] = [];
-
-    await Promise.all(
-      batch.map(async (doc: string, index: number) => {
-        if (!doc) {
-          console.error('Document is undefined, skipping document');
-          return;
-        }
-
-        const pageNumber = chunkIndex * processingBatchSize + index + 1;
-
-        try {
-          const { combinedPreliminaryAnswers } =
-            await processDocumentWithAgentChains(
-              doc,
-              output.descriptiveTitle,
-              output.shortDescription,
-              output.mainTopics
-            );
-
-          const combinedContent = combinedPreliminaryAnswers
-            ? `
-      ${fileName} \n
-      ${output.descriptiveTitle} \n
-      ${output.shortDescription} \n
-      ${output.mainTopics} \n
-      ${output.keyEntities} \n\n
-
-      ${doc} \n\n
-
-      ${combinedPreliminaryAnswers}
-      `
-            : `
-      ${output.descriptiveTitle} \n\n
-
-      ${doc}
-      `;
-
-          try {
+      // Wait for all in-flight pages before marking failure; no late batch writes.
+      const results = await Promise.allSettled(
+        pages
+          .slice(offset, offset + processingBatchSize)
+          .map(async (page, index): Promise<DocumentVectorRecord | null> => {
+            if (!page.trim()) return null;
+            signal.throwIfAborted();
+            const { combinedPreliminaryAnswers } =
+              await processDocumentWithAgentChains(
+                page,
+                output.descriptiveTitle,
+                output.shortDescription,
+                output.mainTopics,
+                signal
+              );
+            signal.throwIfAborted();
+            const combinedContent = combinedPreliminaryAnswers
+              ? [
+                  fileName,
+                  output.descriptiveTitle,
+                  output.shortDescription,
+                  output.mainTopics.join(', '),
+                  output.keyEntities.join(', '),
+                  page,
+                  combinedPreliminaryAnswers
+                ].join('\n\n')
+              : [output.descriptiveTitle, page].join('\n\n');
             const { embedding } = await embed({
               model: embeddingModel,
               value: combinedContent,
+              maxRetries: 0,
+              abortSignal: AbortSignal.any([
+                signal,
+                AbortSignal.timeout(30_000)
+              ]),
               providerOptions: {
                 voyage: {
                   inputType: 'document',
@@ -167,74 +181,80 @@ async function processFile(
                 }
               }
             });
-
-            if (embedding?.length !== 1024) {
-              console.error(
-                `Invalid embedding generated for page ${pageNumber}`
-              );
-              failedPages.push(pageNumber);
-              return;
+            if (
+              !Array.isArray(embedding) ||
+              embedding.length !== 1024 ||
+              !Array.from(embedding).every(
+                (value) => typeof value === 'number' && Number.isFinite(value)
+              )
+            ) {
+              throw new Error('Invalid document embedding');
             }
-
-            vectorBatchRecords.push({
-              document_id: finalDocumentId,
-              page_number: pageNumber,
-              text_content: doc,
+            return {
+              document_id: documentId,
+              page_number: offset + index + 1,
+              text_content: page,
               embedding: `[${embedding.join(',')}]`
-            });
-          } catch (embedError) {
-            console.error(
-              `Error generating embedding for page ${pageNumber}:`,
-              embedError
-            );
-            failedPages.push(pageNumber);
-          }
-        } catch (error) {
-          console.error(`Error processing document page: ${pageNumber}`, error);
-          failedPages.push(pageNumber);
-        }
-      })
-    );
-
-    // Only attempt to upsert if we have records
-    if (vectorBatchRecords.length > 0) {
-      // Upsert vector records in batches
-      const upsertBatches = chunks(vectorBatchRecords, upsertBatchSize);
-
-      for (const batch of upsertBatches) {
-        const { error } = await supabase
-          .from('user_documents_vec')
-          .upsert(batch, {
-            onConflict: 'document_id,page_number'
-          });
-
-        if (error) {
-          throw new Error(
-            `Error upserting vector batch to Supabase: ${error.message}`
-          );
-        }
+            };
+          })
+      );
+      signal.throwIfAborted();
+      const vectorRecords: DocumentVectorRecord[] = [];
+      for (const result of results) {
+        if (result.status === 'rejected') throw result.reason;
+        if (result.value) vectorRecords.push(result.value);
       }
-    } else {
-      console.warn('No vector records to upsert for this batch');
+      if (vectorRecords.length > 0) {
+        const { error: vectorError } = await supabase
+          .from('user_documents_vec')
+          .upsert(vectorRecords, { onConflict: 'document_id,page_number' })
+          .abortSignal(signal);
+        if (vectorError) throw new Error('Could not store document vectors');
+      }
     }
 
-    // Clear batch records for next iteration
-    vectorBatchRecords = [];
-  }
-
-  if (failedPages.length > 0) {
-    throw new Error(
-      `Document processing failed for ${failedPages.length} page(s)`
-    );
+    stage = 'finalization';
+    signal.throwIfAborted();
+    const { error: finalizationError } = await supabase
+      .rpc('complete_document_processing', {
+        p_document_id: documentId,
+        p_user_id: userId,
+        p_job_id: jobId,
+        p_expected_page_numbers: expectedPageNumbers
+      })
+      .abortSignal(signal);
+    if (finalizationError)
+      throw new Error('Could not validate completed document');
+  } catch (error) {
+    console.error(`Document ${stage} failed:`, error);
+    const safeError = new DocumentProcessingError(stage);
+    try {
+      const { error: failureError } = await supabase
+        .from('user_documents')
+        .update({
+          processing_status: 'failed',
+          processing_error: safeError.message
+        })
+        .eq('id', documentId)
+        .eq('user_id', userId)
+        .eq('processing_job_id', jobId)
+        .eq('processing_status', 'processing')
+        .abortSignal(AbortSignal.timeout(5_000));
+      if (failureError)
+        console.error('Could not record document failure:', failureError);
+    } catch (failureError) {
+      console.error('Could not record document failure:', failureError);
+    }
+    throw safeError;
   }
 }
 
-// Rest of your code remains unchanged...
 async function processDocumentWithAgentChains(
   doc: string,
   ai_title: string,
   ai_description: string,
-  ai_maintopics: string[]
+  ai_maintopics: string[],
+  signal?: AbortSignal
 ): Promise<{
   combinedPreliminaryAnswers: string;
 }> {
@@ -246,7 +266,7 @@ async function processDocumentWithAgentChains(
   `;
 
   try {
-    const result = await preliminaryAnswerChainAgent(prompt);
+    const result = await preliminaryAnswerChainAgent(prompt, signal);
 
     const { output } = result;
 
@@ -276,16 +296,11 @@ async function processDocumentWithAgentChains(
 }
 
 export async function POST(req: NextRequest) {
+  const signal = AbortSignal.any([
+    req.signal,
+    AbortSignal.timeout(10 * 60_000)
+  ]);
   try {
-    // Check for Llama Cloud API key
-    if (!process.env.LLAMA_CLOUD_API_KEY) {
-      console.error('LLAMA_CLOUD_API_KEY is not configured');
-      return NextResponse.json(
-        { error: 'Server configuration error: LLAMA_CLOUD_API_KEY is missing' },
-        { status: 500 }
-      );
-    }
-
     const session = await getSession();
     if (!session) {
       return NextResponse.json(
@@ -316,6 +331,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const requiredKeys = [
+      'GOOGLE_GENERATIVE_AI_API_KEY',
+      'VOYAGE_API_KEY',
+      'LLAMA_CLOUD_API_KEY'
+    ] as const;
+    const missingKeys = requiredKeys.filter((key) => !process.env[key]?.trim());
+    if (missingKeys.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Document processing is unavailable. Configure ${missingKeys.join(', ')} on the server and try again.`
+        },
+        { status: 503 }
+      );
+    }
+    signal.throwIfAborted();
+
     const markdownResponse = await fetch(
       `https://api.cloud.llamaindex.ai/api/v1/parsing/job/${encodeURIComponent(
         jobId
@@ -326,7 +357,7 @@ export async function POST(req: NextRequest) {
           Accept: 'application/json'
         },
         cache: 'no-store',
-        signal: AbortSignal.timeout(120_000)
+        signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)])
       }
     );
 
@@ -357,26 +388,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Use the correct page splitting pattern
-    const pages = markdownContent
-      .split('\n---\n')
-      .map((page) => page.trim())
-      .filter((page) => page !== '');
+    // Preserve split-page positions, including blanks, for exact finalization.
+    const pages = markdownContent.split('\n---\n').map((page) => page.trim());
 
-    if (pages.length === 0) {
+    if (!pages.some((page) => page.trim())) {
       return NextResponse.json(
         { error: 'LlamaParse returned no usable document pages' },
         { status: 422 }
       );
     }
 
-    await processFile(pages, fileName.trim(), filePath, userId);
+    await processFile(pages, fileName.trim(), filePath, userId, jobId, signal);
     revalidatePath('/chat', 'layout');
     return NextResponse.json({ status: 'SUCCESS' });
   } catch (error) {
     console.error('Error in POST request:', error);
     if (error instanceof DocumentFilenameConflict) {
       return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    if (error instanceof DocumentProcessingError) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
     return NextResponse.json(
       { error: 'Internal server error' },

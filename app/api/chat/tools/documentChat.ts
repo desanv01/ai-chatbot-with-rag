@@ -76,7 +76,9 @@ function validateQueryEmbedding(embedding: number[]) {
   if (
     !Array.isArray(embedding) ||
     embedding.length !== EMBEDDING_DIMENSIONS ||
-    !embedding.every((value) => typeof value === 'number' && Number.isFinite(value))
+    !embedding.every(
+      (value) => typeof value === 'number' && Number.isFinite(value)
+    )
   ) {
     throw new Error(RETRIEVAL_FAILURE);
   }
@@ -105,7 +107,8 @@ async function getUserDocumentIds(userId: string): Promise<string[]> {
   const { data, error } = await supabase
     .from('user_documents')
     .select('id')
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .eq('processing_status', 'ready');
 
   if (error) {
     console.error('Error fetching user documents:', error);
@@ -167,14 +170,15 @@ export const searchUserDocument = ({ userId }: SearchUserDocumentProps) =>
     outputSchema: zodSchema(searchUserDocumentOutputSchema),
     execute: async ({ query }, { messages }) => {
       const toolQuery = query.trim();
-      if (!toolQuery) throw new Error('Document search query must not be empty.');
+      if (!toolQuery)
+        throw new Error('Document search query must not be empty.');
 
       const documentIds = await getUserDocumentIds(userId);
 
       if (documentIds.length === 0) {
         return {
           instructions:
-            'The user has no uploaded documents. Ask them to upload a PDF first, then you can search and answer questions from it.',
+            'The user has no completed, searchable documents. Ask them to check processing in the file manager or upload a PDF and wait for it to become ready before searching.',
           context: []
         };
       }

@@ -14,7 +14,9 @@ export const fetchUserFilesData = cache(async () => {
         title,
         created_at,
         total_pages,
-        file_path
+        file_path,
+        processing_status,
+        processing_error
       )
     `
     )
