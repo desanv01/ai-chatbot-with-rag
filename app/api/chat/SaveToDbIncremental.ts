@@ -11,8 +11,9 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function toDatabaseUuid(value: string | undefined): string {
-  if (value && UUID_PATTERN.test(value)) return value;
-  return uuidv5(value || crypto.randomUUID(), DATABASE_UUID_NAMESPACE);
+  if (!value) throw new Error('A message or tool call ID is required.');
+  if (UUID_PATTERN.test(value)) return value;
+  return uuidv5(value, DATABASE_UUID_NAMESPACE);
 }
 
 // Helper function to sanitize data for Postgres
@@ -88,11 +89,12 @@ export const saveMessagesToDB = async ({
     const allParts: PartsInsert[] = [];
 
     messages.forEach((message) => {
+      const originalMessageId = toDatabaseUuid(message.id);
       // For assistant messages in incremental saves, use the provided assistantMessageId
       const messageId =
         message.role === 'assistant' && assistantMessageId
           ? toDatabaseUuid(assistantMessageId)
-          : toDatabaseUuid(message.id);
+          : originalMessageId;
       const role = message.role;
 
       // Skip user messages if not first step (they're already saved)
@@ -100,21 +102,17 @@ export const saveMessagesToDB = async ({
         return;
       }
 
-      // Add delay for assistant messages
-      const messageTime =
-        role === 'assistant'
-          ? new Date(now.getTime() + 5000)
-          : new Date(now.getTime());
-
       // Process ALL parts from the message
       message.parts.forEach((part, partIndex) => {
         const basePart = {
-          id: crypto.randomUUID(), // Generate a new ID for the part
+          id: uuidv5(
+            JSON.stringify([chatSessionId, messageId, partIndex]),
+            DATABASE_UUID_NAMESPACE
+          ),
           chat_session_id: chatSessionId,
           message_id: messageId,
           role: role,
-          order: partIndex,
-          created_at: messageTime.toISOString()
+          order: partIndex
         };
 
         // Handle different part types
@@ -164,7 +162,7 @@ export const saveMessagesToDB = async ({
             allParts.push({
               ...basePart,
               type: 'source-url',
-              source_url_id: sourcePart.sourceId || crypto.randomUUID(),
+              source_url_id: sourcePart.sourceId || basePart.id,
               source_url_url: sanitizeForPostgres(sourcePart.url),
               source_url_title: sanitizeForPostgres(sourcePart.title) || null,
               providermetadata:
@@ -178,7 +176,7 @@ export const saveMessagesToDB = async ({
             allParts.push({
               ...basePart,
               type: 'source-document',
-              source_document_id: sourceDocPart.sourceId || crypto.randomUUID(),
+              source_document_id: sourceDocPart.sourceId || basePart.id,
               source_document_mediatype: sanitizeForPostgres(
                 sourceDocPart.mediaType
               ),

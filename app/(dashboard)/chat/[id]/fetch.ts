@@ -113,26 +113,18 @@ function reconstructPart(
 
 // Format messages from database parts - following the example structure
 export function formatMessages(messageParts: MessagePart[]): UIMessage[] {
-  const messages: UIMessage[] = [];
-  let currentMessage: UIMessage | null = null;
-  let currentMessageId: string | null = null;
+  const messages = new Map<string, UIMessage>();
 
   // Process parts in order (they're already sorted by created_at and order from SQL)
   for (const part of messageParts) {
-    // If we encounter a new message_id, save the current message and start a new one
-    if (part.message_id !== currentMessageId) {
-      // Save the current message if it exists
-      if (currentMessage) {
-        messages.push(currentMessage);
-      }
-
-      // Start a new message
-      currentMessageId = part.message_id;
+    let currentMessage = messages.get(part.message_id);
+    if (!currentMessage) {
       currentMessage = {
         id: part.message_id,
         role: part.role as 'user' | 'assistant' | 'system',
         parts: []
       };
+      messages.set(part.message_id, currentMessage);
     }
 
     // Reconstruct the part and add it to the current message
@@ -142,12 +134,7 @@ export function formatMessages(messageParts: MessagePart[]): UIMessage[] {
     }
   }
 
-  // Don't forget to add the last message
-  if (currentMessage) {
-    messages.push(currentMessage);
-  }
-
-  return messages;
+  return [...messages.values()];
 }
 
 export async function fetchChat(chatId: string) {
