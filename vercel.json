@@ -5,6 +5,7 @@
       "main": false,
       "v1/phase0-baseline": false,
       "v1/phase1-runtime": false,
+      "v1/phase2-auth-callback": false,
       "v1/phase3-provider-guards": false,
       "v1/phase4-upload-safety": false,
       "v1/phase4-processing-state": false,
