@@ -7,11 +7,6 @@ export type Json =
   | Json[];
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: '13.0.5';
-  };
   graphql_public: {
     Tables: {
       [_ in never]: never;
@@ -47,6 +42,7 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
+        ComputedFields: never;
         Insert: {
           chat_title?: string | null;
           created_at?: string;
@@ -70,33 +66,6 @@ export type Database = {
             referencedColumns: ['id'];
           }
         ];
-      };
-      error_feedback: {
-        Row: {
-          category: string | null;
-          created_at: string | null;
-          errormessage: string | null;
-          errorstack: string | null;
-          feedback: string;
-          id: number;
-        };
-        Insert: {
-          category?: string | null;
-          created_at?: string | null;
-          errormessage?: string | null;
-          errorstack?: string | null;
-          feedback: string;
-          id?: number;
-        };
-        Update: {
-          category?: string | null;
-          created_at?: string | null;
-          errormessage?: string | null;
-          errorstack?: string | null;
-          feedback?: string;
-          id?: number;
-        };
-        Relationships: [];
       };
       message_parts: {
         Row: {
@@ -137,6 +106,7 @@ export type Database = {
           tool_websitesearchtool_toolcallid: string | null;
           type: string;
         };
+        ComputedFields: never;
         Insert: {
           chat_session_id: string;
           created_at?: string;
@@ -235,6 +205,7 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
+        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: number;
@@ -276,11 +247,15 @@ export type Database = {
           created_at: string;
           file_path: string;
           id: string;
+          processing_error: string | null;
+          processing_job_id: string | null;
+          processing_status: string;
           title: string;
           total_pages: number;
           updated_at: string | null;
           user_id: string;
         };
+        ComputedFields: never;
         Insert: {
           ai_description?: string | null;
           ai_keyentities?: string[] | null;
@@ -289,6 +264,9 @@ export type Database = {
           created_at?: string;
           file_path: string;
           id?: string;
+          processing_error?: string | null;
+          processing_job_id?: string | null;
+          processing_status?: string;
           title: string;
           total_pages: number;
           updated_at?: string | null;
@@ -302,6 +280,9 @@ export type Database = {
           created_at?: string;
           file_path?: string;
           id?: string;
+          processing_error?: string | null;
+          processing_job_id?: string | null;
+          processing_status?: string;
           title?: string;
           total_pages?: number;
           updated_at?: string | null;
@@ -325,6 +306,7 @@ export type Database = {
           page_number: number;
           text_content: string;
         };
+        ComputedFields: never;
         Insert: {
           document_id: string;
           embedding?: string | null;
@@ -357,6 +339,7 @@ export type Database = {
           role: string;
           stripe_customer_id: string | null;
         };
+        ComputedFields: never;
         Insert: {
           email?: string | null;
           full_name?: string | null;
@@ -378,6 +361,15 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      complete_document_processing: {
+        Args: {
+          p_document_id: string;
+          p_expected_page_numbers: number[];
+          p_job_id: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
       match_documents: {
         Args: {
           file_ids: string[];
