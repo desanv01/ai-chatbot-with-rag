@@ -33,11 +33,9 @@ export default async function ChatPage(props: PageProps) {
       </div>
 
       {searchParams.url ? (
-        <WebsiteWiever url={decodeURIComponent(searchParams.url)} />
+        <WebsiteWiever url={searchParams.url} />
       ) : searchParams.pdf ? (
-        <DocumentComponent
-          fileReference={decodeURIComponent(searchParams.pdf)}
-        />
+        <DocumentComponent fileReference={searchParams.pdf} />
       ) : null}
     </div>
   );

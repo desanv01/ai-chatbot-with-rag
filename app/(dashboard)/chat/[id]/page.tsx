@@ -32,7 +32,7 @@ export default async function ChatPage(props: {
     formattedMessages = formatMessages(chatData.message_parts);
 
     if (searchParams.file && formattedMessages) {
-      const fileName = decodeURIComponent(searchParams.file);
+      const fileName = searchParams.file;
 
       for (const message of formattedMessages) {
         const filePart = message.parts?.find(
@@ -60,18 +60,12 @@ export default async function ChatPage(props: {
       {attachmentUrl ? (
         <UserPdfViewer
           url={attachmentUrl}
-          fileName={
-            searchParams.file
-              ? decodeURIComponent(searchParams.file)
-              : 'Document'
-          }
+          fileName={searchParams.file || 'Document'}
         />
       ) : searchParams.url ? (
-        <WebsiteWiever url={decodeURIComponent(searchParams.url)} />
+        <WebsiteWiever url={searchParams.url} />
       ) : searchParams.pdf ? (
-        <DocumentComponent
-          fileReference={decodeURIComponent(searchParams.pdf)}
-        />
+        <DocumentComponent fileReference={searchParams.pdf} />
       ) : null}
     </div>
   );
