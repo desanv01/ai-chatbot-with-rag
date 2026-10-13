@@ -74,12 +74,17 @@ const mocks = {
       streamed.push(opts);
       return {
         consumeStream() {},
-        toUIMessageStreamResponse: (opts) => {
+        toUIMessageStream: (opts) => {
           streamed[0].uiOptions = opts;
-          return new Response('mock stream');
+          return 'mock stream';
         }
       };
-    }
+    },
+    createUIMessageStream: (opts) => {
+      opts.execute({ writer: { merge: () => {} } });
+      return 'wrapped stream';
+    },
+    createUIMessageStreamResponse: () => new Response('mock stream')
   }
 };
 function load(file) {
