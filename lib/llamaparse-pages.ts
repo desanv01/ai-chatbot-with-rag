@@ -47,8 +47,19 @@ export function normalizeLlamaParsePages(result: unknown): string[] {
       throw new Error('Invalid parser page.');
     }
 
-    const content =
-      typeof page.md === 'string' && page.md.trim()
+    const nonblankFields = [page.text, page.md]
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    // Only treat the parser's explicitly flagged, marker-only page as blank.
+    const isBlankParserMarker =
+      page.noTextContent === true &&
+      nonblankFields.length > 0 &&
+      nonblankFields.every((value) => value === 'NO_CONTENT_HERE');
+
+    const content = isBlankParserMarker
+      ? ''
+      : typeof page.md === 'string' && page.md.trim()
         ? page.md
         : typeof page.text === 'string'
           ? page.text

@@ -36,6 +36,23 @@ assert.deepEqual(
   ['fallback']
 );
 assert.deepEqual(Array.from(parse({ pages: [{ page: 1, md: '' }] })), ['']);
+assert.deepEqual(
+  Array.from(parse({pages:[
+    {page:1,md:'first'},
+    {page:2,text:' NO_CONTENT_HERE ',md:'NO_CONTENT_HERE',noTextContent:true},
+    {page:3,md:'third'}
+  ]})),
+  ['first','','third']
+);
+for (const page of [
+  {page:1,md:'NO_CONTENT_HERE'},
+  {page:1,md:'NO_CONTENT_HERE',noTextContent:false},
+  {page:1,md:'NO_CONTENT_HERE',noTextContent:'true'},
+  {page:1,md:'NO_CONTENT_HERE is printed content',noTextContent:true},
+  {page:1,md:'real markdown',text:'NO_CONTENT_HERE',noTextContent:true},
+  {page:1,md:'NO_CONTENT_HERE',text:'real plain text',noTextContent:true}
+]) assert.notEqual(parse({pages:[page]})[0],'');
+assert.deepEqual(Array.from(parse({pages:[{page:1,text:'NO_CONTENT_HERE',md:' ',noTextContent:true}]})),['']);
 for (const result of [
   null,
   {},
