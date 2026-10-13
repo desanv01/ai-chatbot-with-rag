@@ -5,6 +5,17 @@ const ts = require('typescript');
 const base =
   require('node:path').resolve(__dirname, '../..') + require('node:path').sep;
 let streamed = [];
+const enriched = [];
+const deadlines = [];
+const enrichmentAbort = {
+  timeout(ms) {
+    deadlines.push(ms);
+    return new AbortController().signal;
+  },
+  any(signals) {
+    return AbortSignal.any(signals);
+  }
+};
 const mocks = {
   'next/server': {
     NextResponse: class extends Response {
@@ -17,6 +28,32 @@ const mocks = {
     }
   },
   ai: {
+    Output: { object: (value) => value },
+    generateText: async (opts) => {
+      opts.abortSignal.throwIfAborted();
+      enriched.push(opts);
+      const output =
+        'descriptiveTitle' in opts.output.schema.shape
+          ? {
+              descriptiveTitle: 'Orchid',
+              shortDescription: 'Synthetic project',
+              mainTopics: ['project'],
+              keyEntities: ['ORCHID'],
+              primaryLanguage: 'English'
+            }
+          : {
+              preliminary_answer_1: 'ORCHID',
+              preliminary_answer_2: 'Mira Vale',
+              tags: ['project'],
+              hypothetical_question_1: 'What is the code?',
+              hypothetical_question_2: 'Who is the lead?'
+            };
+      return {
+        output: opts.output.schema.parse(output),
+        usage: { outputTokens: 20 },
+        finishReason: 'stop'
+      };
+    },
     streamText: (opts) => {
       streamed.push(opts);
       return {
@@ -36,7 +73,8 @@ const mocks = {
   './SaveToDbIncremental': { saveMessagesToDB: async () => {} },
   './tools/documentChat': { searchUserDocument: () => ({}) },
   './tools/WebsiteSearchTool': { websiteSearchTool: {} },
-  'server-only': {}
+  'server-only': {},
+  zod: require('zod')
 };
 function load(file) {
   const out = { exports: {} };
@@ -54,7 +92,10 @@ function load(file) {
     console,
     Response,
     crypto,
-    AbortSignal
+    AbortSignal:
+      file === 'app/api/processdoc/agentchains.ts'
+        ? enrichmentAbort
+        : AbortSignal
   };
   vm.runInNewContext(
     ts.transpileModule(fs.readFileSync(base + file, 'utf8'), {
@@ -97,6 +138,43 @@ async function request(option) {
     null
   );
   assert.equal((await request()).status, 503);
+  const chains = load('app/api/processdoc/agentchains.ts');
+  const controller = new AbortController();
+  const metadata = await chains.generateDocumentMetadata(
+    'Synthetic ORCHID content',
+    controller.signal
+  );
+  assert.equal(metadata.output.descriptiveTitle, 'Orchid');
+  const analysis = await chains.preliminaryAnswerChainAgent(
+    'Synthetic ORCHID content',
+    controller.signal
+  );
+  assert.equal(analysis.output.preliminary_answer_1, 'ORCHID');
+  assert.equal(enriched.length, 2);
+  for (const opts of enriched) {
+    assert.equal(opts.model.provider, 'google');
+    assert.equal(opts.model.id, 'gemini-3-flash-preview');
+    assert.equal(opts.maxRetries, 0);
+    assert.ok(opts.maxOutputTokens > 0 && opts.maxOutputTokens <= 1024);
+    assert.equal(
+      opts.providerOptions.google.thinkingConfig.thinkingLevel,
+      'minimal'
+    );
+    assert.equal(opts.abortSignal.aborted, false);
+  }
+  assert.ok(deadlines.every((ms) => ms >= 30000 && ms <= 60000));
+  controller.abort();
+  for (const opts of enriched) assert.equal(opts.abortSignal.aborted, true);
+  await assert.rejects(
+    chains.generateDocumentMetadata('Synthetic content', controller.signal)
+  );
+  await assert.rejects(
+    chains.preliminaryAnswerChainAgent('Synthetic content', controller.signal)
+  );
+  assert.equal(enriched.length, 2);
+  console.log(
+    'PASS bounded Google structured enrichment and caller cancellation; mocked provider only'
+  );
   assert.equal(streamed.length, 0);
   env({ GOOGLE_GENERATIVE_AI_API_KEY: 'test-only' });
   assert.equal((await request()).status, 200);

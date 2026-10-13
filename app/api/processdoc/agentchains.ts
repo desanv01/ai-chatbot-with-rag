@@ -3,6 +3,14 @@ import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { google } from '@ai-sdk/google';
 
+const ENRICHMENT_TIMEOUT_MS = 45_000;
+const ENRICHMENT_MAX_OUTPUT_TOKENS = 1024;
+const ENRICHMENT_PROVIDER_OPTIONS = {
+  google: {
+    thinkingConfig: { thinkingLevel: 'minimal' }
+  }
+} as const;
+
 const contentAnalysisSchema = z.object({
   preliminary_answer_1: z.string(),
   preliminary_answer_2: z.string(),
@@ -24,8 +32,10 @@ export const preliminaryAnswerChainAgent = async (
     prompt: content,
     output: Output.object({ schema: contentAnalysisSchema }),
     maxRetries: 0,
+    maxOutputTokens: ENRICHMENT_MAX_OUTPUT_TOKENS,
+    providerOptions: ENRICHMENT_PROVIDER_OPTIONS,
     abortSignal: AbortSignal.any([
-      AbortSignal.timeout(15_000),
+      AbortSignal.timeout(ENRICHMENT_TIMEOUT_MS),
       ...(outerSignal ? [outerSignal] : [])
     ]),
     temperature: 0
@@ -57,8 +67,10 @@ Answer in the same language as the input text.
     prompt: content,
     output: Output.object({ schema: documentMetadataSchema }),
     maxRetries: 0,
+    maxOutputTokens: ENRICHMENT_MAX_OUTPUT_TOKENS,
+    providerOptions: ENRICHMENT_PROVIDER_OPTIONS,
     abortSignal: AbortSignal.any([
-      AbortSignal.timeout(15_000),
+      AbortSignal.timeout(ENRICHMENT_TIMEOUT_MS),
       ...(outerSignal ? [outerSignal] : [])
     ]),
     temperature: 0
