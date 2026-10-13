@@ -9,6 +9,9 @@ const element = (type, props) => ({ type, props });
 const mocks = {
   'server-only': {},
   'react/jsx-runtime': { jsx: element, jsxs: element },
+  '@/components/ui/button': { Button: 'button' },
+  'lucide-react': { X: 'close', Eye: 'eye', FileText: 'file' },
+  'next/link': { default: 'link' },
   'next/headers': { cookies: async () => ({ get: () => undefined }) },
   uuid: { v4: () => 'synthetic-chat' },
   '@/lib/server/admin': { createAdminClient: () => { throw Error('Must not sign unowned fixture'); } },
@@ -18,7 +21,7 @@ const mocks = {
   '@/lib/model-config': { sanitizeChatModel: () => 'fixture' },
   './fetch': { fetchChat: async () => ({ message_parts: [] }), formatMessages: () => [{ parts: [{ type: 'file', filename, url: 'https://example.invalid/owned-attachment' }] }] }
 };
-function load(relative) {
+function load(relative, exportName = 'default') {
   const source = fs.readFileSync(path.resolve(__dirname, '../..', relative), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const fixtureModule = { exports: {} };
@@ -27,11 +30,16 @@ function load(relative) {
     if (/components\//.test(name)) return { default: name };
     throw Error(`Unexpected module ${name}`);
   }, console });
-  return fixtureModule.exports.default;
+  return fixtureModule.exports[exportName];
+}
+function flatten(tree) {
+  if (Array.isArray(tree)) return tree.flatMap(flatten);
+  return tree && typeof tree === 'object' ? [tree, ...flatten(tree.props?.children)] : [];
 }
 async function main() {
   const fresh = load('app/(dashboard)/chat/page.tsx');
   const saved = load('app/(dashboard)/chat/[id]/page.tsx');
+  const preview = load('app/(dashboard)/filer/components/DocumentViewer.tsx', 'DocumentViewer');
   for (const value of ['unusual 100% café.pdf', 'literal%2Fname.pdf', 'percent%zz.pdf', '雪 + #.pdf']) {
     filename = value;
     for (const page of [fresh, saved]) {
@@ -48,6 +56,12 @@ async function main() {
     const tree = await saved({ params: Promise.resolve({ id: 'owned-chat' }), searchParams: Promise.resolve({ file: value }) });
     assert.equal(tree.props.children[1].props.fileName, value);
     assert.equal(tree.props.children[1].props.url, 'https://example.invalid/owned-attachment');
+    const previewTree = preview({ fileName: value, signedUrl: 'https://example.invalid/owned-source' });
+    const nodes = flatten(previewTree);
+    const frame = nodes.find(node => node.type === 'iframe');
+    assert.equal(frame.props.title, 'Preview: ' + value);
+    assert.equal(frame.props.src, 'https://example.invalid/owned-source');
+    assert.ok(nodes.some(node => node.props?.children === value), 'Display title changed');
   }
   const url = 'https://example.invalid/a%2Fb?query=100%25';
   for (const page of [fresh, saved]) {
@@ -55,6 +69,9 @@ async function main() {
     const tree = await page({ params: Promise.resolve({ id: 'owned-chat' }), searchParams: Promise.resolve({ url: decoded }) });
     assert.equal(tree.props.children[1].props.url, url);
   }
-  console.log('PASS fresh/saved citation routes: literal percent, encoded-looking names, Unicode, attachments and nested URL escapes');
+  for (const props of [{ fileName: null, signedUrl: null }, { fileName: '100%.pdf', signedUrl: null }]) {
+    assert.equal(flatten(preview(props)).some(node => node.type === 'iframe'), false);
+  }
+  console.log('PASS fresh/saved citation routes and file preview: literal percent, encoded-looking names, Unicode, attachments, unavailable sources and nested URL escapes');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });
