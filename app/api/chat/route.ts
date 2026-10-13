@@ -1,6 +1,12 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import type { UIMessage } from 'ai';
-import { streamText, convertToModelMessages, stepCountIs } from 'ai';
+import {
+  streamText,
+  convertToModelMessages,
+  stepCountIs,
+  createUIMessageStream,
+  createUIMessageStreamResponse
+} from 'ai';
 import { saveMessagesToDB } from './SaveToDbIncremental';
 
 import type { OpenAIResponsesProviderOptions } from '@ai-sdk/openai';
@@ -411,10 +417,20 @@ export async function POST(req: NextRequest) {
 
   result.consumeStream();
 
-  return result.toUIMessageStreamResponse({
-    generateMessageId: () => assistantMessageId,
-    sendReasoning: true,
-    sendSources: true,
+  const stream = createUIMessageStream({
+    generateId: () => assistantMessageId,
+    execute: ({ writer }) => {
+      writer.merge(
+        result.toUIMessageStream({
+          generateMessageId: () => assistantMessageId,
+          sendReasoning: true,
+          sendSources: true,
+          onError: errorHandler
+        })
+      );
+    },
     onError: errorHandler
   });
+
+  return createUIMessageStreamResponse({ stream });
 }

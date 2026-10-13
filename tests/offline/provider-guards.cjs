@@ -58,13 +58,18 @@ const mocks = {
       streamed.push(opts);
       return {
         consumeStream() {},
-        toUIMessageStreamResponse() {
-          return new Response('mock stream');
+        toUIMessageStream() {
+          return 'mock stream';
         }
       };
     },
     convertToModelMessages: async (m) => m,
-    stepCountIs: (n) => n
+    stepCountIs: (n) => n,
+    createUIMessageStream: (opts) => {
+      opts.execute({ writer: { merge() {} } });
+      return 'wrapped stream';
+    },
+    createUIMessageStreamResponse: () => new Response('mock stream')
   },
   '@ai-sdk/openai': { openai: (id) => ({ provider: 'openai', id }) },
   '@ai-sdk/anthropic': { anthropic: (id) => ({ provider: 'anthropic', id }) },
