@@ -11,10 +11,17 @@ export async function GET(request: Request) {
   const next = getSafeRedirectPath(searchParams.get('next'), '/signin');
 
   if (code) {
-    const supabase = await createServerSupabaseClient();
+    let authenticated = false;
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
+    try {
+      const supabase = await createServerSupabaseClient();
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      authenticated = Boolean(!error && data.user && data.session);
+    } catch {
+      authenticated = false;
+    }
+
+    if (authenticated) {
       const redirectTo = new URL(next, origin);
       redirectTo.searchParams.set('message', 'You are now signed in');
       return NextResponse.redirect(redirectTo);
