@@ -15,6 +15,7 @@
       "agent/reapply-document-processing-hardening": false,
       "v1/phase6-offline-regressions": false,
       "v1/phase7-checkpoint-docs": false,
+      "v1/phase8-live-guidance": false,
       "v1/phase8-auth-flows": false
     }
   }
