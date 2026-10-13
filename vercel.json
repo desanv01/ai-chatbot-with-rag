@@ -18,6 +18,7 @@
       "v1/phase8-live-guidance": false,
       "v1/phase8-auth-flows": false,
       "v1/phase8-enrichment-timeouts": false,
+      "v1/phase8-auth-ingestion-evidence": false,
       "v1/phase8-signin-navigation": false,
       "v1/phase8-blank-parser-marker": false,
       "v1/phase8-citation-filename": false
