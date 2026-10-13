@@ -52,7 +52,7 @@ export default function SignInCard() {
         } else {
           localStorage.removeItem('rememberedEmail');
         }
-        router.back();
+        router.replace('/chat');
       }
     }
   };
