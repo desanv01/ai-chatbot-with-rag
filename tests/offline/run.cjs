@@ -15,6 +15,7 @@ const suites = [
   'auth-security',
   'provider-guards',
   'parser-pages',
+  'citation-routing',
   'upload-processing',
   'upload-ui',
   'retrieval',
