@@ -39,6 +39,9 @@ async function exercise(fetch, existingId) {
   return chat;
 }
 async function main() {
+  const jsonError = JSON.stringify({ message: errorText });
+  await exercise(async () => new Response(jsonError, { status: 500, headers: { 'content-type': 'application/json' } }));
+  assert.deepEqual(effects, [['toast', jsonError]], 'Actual API JSON error triggered success effects');
   for (const fetch of [async () => new Response(errorText, { status: 500 }), async () => stream([{ type: 'start', messageId: 'response' }, { type: 'error', errorText }])]) {
     for (const id of [undefined, 'owned-chat']) {
       const chat = await exercise(fetch, id);
