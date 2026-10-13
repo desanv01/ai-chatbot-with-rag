@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const next = getSafeRedirectPath(searchParams.get('next'), '/');
   let redirectTo = new URL(next, request.url);
 
-  const token_hash = code ?? token_hash_searchParam;
+  const token_hash = token_hash_searchParam ?? code;
 
   if (token_hash && isEmailOtpType(type)) {
     let authenticated = false;

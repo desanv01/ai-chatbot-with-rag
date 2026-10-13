@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { createServerSupabaseClient } from '@/lib/server/server';
+import { getBaseUrl } from '@/utils/getBaseUrl';
 
 const formDataSchemaSignin = z.object({
   email: z.email(),
@@ -75,6 +76,7 @@ export async function signup(formData: FormData) {
     email: email,
     password: password,
     options: {
+      emailRedirectTo: new URL('/api/auth/confirm', getBaseUrl()).toString(),
       data: { full_name: fullName ?? 'default_user' }
     }
   });
@@ -110,7 +112,12 @@ export async function resetPasswordForEmail(formData: FormData) {
     };
   }
 
-  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  const redirectTo = new URL('/api/auth/confirm', getBaseUrl());
+  redirectTo.searchParams.set('next', '/redirect/auth-password-update');
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: redirectTo.toString()
+  });
 
   if (error) {
     return {
