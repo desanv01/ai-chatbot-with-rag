@@ -58,7 +58,9 @@ const ChatComponent: React.FC<ChatProps> = ({
     }),
     experimental_throttle: 50,
     messages: currentChat,
-    onFinish: async () => {
+    onFinish: async ({ isError }) => {
+      if (isError) return;
+
       // Navigate to the new chat URL if we're not already there
       if (chatId !== currentChatId) {
         const currentSearchParams = new URLSearchParams(window.location.search);

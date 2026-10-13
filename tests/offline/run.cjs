@@ -20,7 +20,8 @@ const suites = [
   'upload-ui',
   'retrieval',
   'persistence',
-  'sdk-persistence-failure'
+  'sdk-persistence-failure',
+  'chat-finish'
 ];
 for (const suite of suites) {
   execFileSync(
