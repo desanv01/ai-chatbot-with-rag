@@ -23,6 +23,8 @@
       "v1/phase8-blank-parser-marker": false,
       "v1/phase8-citation-filename": false,
       "v1/phase8-file-preview": false,
+      "v1/phase8-chat-error-finish": false,
+      "v1/phase8-trigger-acl": false,
       "v1/phase8-verified-evidence": false
     }
   }
