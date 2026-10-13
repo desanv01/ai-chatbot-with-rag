@@ -42,13 +42,11 @@ export function DocumentViewer({ fileName, signedUrl }: DocumentViewerProps) {
     );
   }
 
-  const decodedFileName = decodeURIComponent(fileName);
-
   return (
     <div className="flex-1 relative">
       <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
         <div className="bg-background/90 backdrop-blur-sm rounded-lg px-3 py-1.5 text-sm font-medium truncate max-w-[70%]">
-          {decodedFileName}
+          {fileName}
         </div>
         <Button
           variant="secondary"
@@ -64,7 +62,7 @@ export function DocumentViewer({ fileName, signedUrl }: DocumentViewerProps) {
       <iframe
         src={signedUrl}
         className="w-full h-full border-none"
-        title={`Preview: ${decodedFileName}`}
+        title={`Preview: ${fileName}`}
       />
     </div>
   );

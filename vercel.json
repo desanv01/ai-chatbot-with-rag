@@ -21,7 +21,8 @@
       "v1/phase8-auth-ingestion-evidence": false,
       "v1/phase8-signin-navigation": false,
       "v1/phase8-blank-parser-marker": false,
-      "v1/phase8-citation-filename": false
+      "v1/phase8-citation-filename": false,
+      "v1/phase8-file-preview": false
     }
   }
 }
