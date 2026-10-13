@@ -7,6 +7,19 @@ const base =
 let mode = 'success',
   calls = 0,
   clock = 100000000;
+let verifiedToken;
+const signupRequests = [],
+  recoveryRequests = [];
+function authResult() {
+  if (mode === 'throw') throw Error('private upstream error');
+  return {
+    data: {
+      user: mode === 'no-user' || mode === 'failure' ? null : { id: 'fixture' },
+      session: mode === 'no-session' || mode === 'failure' ? null : {}
+    },
+    error: mode === 'failure' || mode === 'error-with-data' ? {} : null
+  };
+}
 class FixtureDate extends Date {
   static now() {
     return clock;
@@ -14,8 +27,9 @@ class FixtureDate extends Date {
 }
 const client = {
   auth: {
-    verifyOtp: async () => {
+    verifyOtp: async (args) => {
       calls++;
+      verifiedToken = args.token_hash;
       if (mode === 'throw') throw Error('private upstream error');
       if (mode === 'failure')
         return {
@@ -31,6 +45,18 @@ const client = {
         data: { user: { id: 'fixture' }, session: {} },
         error: mode === 'error-with-data' ? {} : null
       };
+    },
+    exchangeCodeForSession: async () => {
+      calls++;
+      return authResult();
+    },
+    signUp: async (args) => {
+      signupRequests.push(args);
+      return { error: null };
+    },
+    resetPasswordForEmail: async (email, options) => {
+      recoveryRequests.push({ email, ...options });
+      return { error: null };
     }
   }
 };
@@ -49,7 +75,15 @@ const mocks = {
       if (mode === 'client-throw') throw Error('private client error');
       return client;
     }
-  }
+  },
+  zod: require('zod'),
+  'next/cache': { revalidatePath() {} },
+  'next/navigation': {
+    redirect() {
+      throw Error('unexpected redirect');
+    }
+  },
+  '@/utils/getBaseUrl': { getBaseUrl: () => 'https://canonical.test/' }
 };
 function load(file) {
   const exp = {};
@@ -70,6 +104,7 @@ function load(file) {
             : mocks[name],
       URL,
       Response,
+      FormData,
       Buffer,
       process,
       Date: FixtureDate,
@@ -161,6 +196,14 @@ async function run() {
     }
   }
   mode = 'success';
+  await callback({
+    url: 'https://app.test/api/auth/callback?token_hash=otp-hash&code=unrelated-code&type=email'
+  });
+  assert.equal(verifiedToken, 'otp-hash');
+  await callback({
+    url: 'https://app.test/api/auth/callback?code=legacy-hash&type=email'
+  });
+  assert.equal(verifiedToken, 'legacy-hash');
   for (const query of [
     'token_hash=fixture&type=invalid',
     'type=email',
@@ -184,8 +227,72 @@ async function run() {
       'https://app.test'
     );
   }
+  const confirm = load('app/api/auth/confirm/route.ts').GET;
+  for (const current of [
+    'success',
+    'failure',
+    'no-session',
+    'no-user',
+    'error-with-data',
+    'throw',
+    'client-throw'
+  ]) {
+    mode = current;
+    const response = await confirm({
+      url: 'https://app.test/api/auth/confirm?code=fixture&next=%2Fredirect%2Fauth-password-update'
+    });
+    const url = new URL(response.headers.get('location'));
+    assert.equal(url.origin, 'https://app.test');
+    assert.equal(url.href.includes('private'), false);
+    assert.equal(
+      url.pathname,
+      current === 'success' ? '/redirect/auth-password-update' : '/signin'
+    );
+    assert.equal(
+      url.searchParams.get('message'),
+      current === 'success' ? 'You are now signed in' : 'An error occurred'
+    );
+  }
+  mode = 'success';
+  const prior = calls;
+  await confirm({ url: 'https://app.test/api/auth/confirm' });
+  assert.equal(calls, prior);
+  for (const next of ['https://evil.test/', '//evil.test/', '/\\evil.test/']) {
+    const response = await confirm({
+      url: `https://app.test/api/auth/confirm?code=fixture&next=${encodeURIComponent(next)}`
+    });
+    const url = new URL(response.headers.get('location'));
+    assert.equal(url.origin, 'https://app.test');
+    assert.equal(url.pathname, '/signin');
+  }
+  for (const file of ['app/(frontpage)/action.ts', 'app/@modal/action.ts']) {
+    const actions = load(file);
+    const form = new FormData();
+    form.set('email', 'fixture@example.test');
+    form.set('password', 'fixture-password');
+    assert.equal((await actions.signup(form)).success, true);
+    assert.equal(
+      signupRequests.at(-1).options.emailRedirectTo,
+      'https://canonical.test/api/auth/confirm'
+    );
+    assert.equal((await actions.resetPasswordForEmail(form)).success, true);
+    const redirect = new URL(recoveryRequests.at(-1).redirectTo);
+    assert.equal(redirect.origin, 'https://canonical.test');
+    assert.equal(redirect.pathname, '/api/auth/confirm');
+    assert.equal(
+      redirect.searchParams.get('next'),
+      '/redirect/auth-password-update'
+    );
+    const beforeSignup = signupRequests.length,
+      beforeRecovery = recoveryRequests.length;
+    form.set('email', 'invalid');
+    assert.equal((await actions.signup(form)).success, false);
+    assert.equal((await actions.resetPasswordForEmail(form)).success, false);
+    assert.equal(signupRequests.length, beforeSignup);
+    assert.equal(recoveryRequests.length, beforeRecovery);
+  }
   console.log(
-    'PASS OTP error/null-session/throw/type handling, local redirects, owner paths and real HMAC binding/tamper/expiry/rotation; mocked Auth only'
+    'PASS OTP/PKCE error/null-session/throw/type handling, token precedence, canonical signup/recovery redirects, invalid input, owner paths and real HMAC binding/tamper/expiry/rotation; mocked Auth only'
   );
 }
 run().catch((error) => {
