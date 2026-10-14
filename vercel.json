@@ -27,7 +27,8 @@
       "v1/phase8-trigger-acl": false,
       "v1/phase8-verified-evidence": false,
       "v1/phase8-stream-save-errors": false,
-      "v1/phase8-accessible-stop": false
+      "v1/phase8-accessible-stop": false,
+      "v1/phase8-grounded-long-answers": false
     }
   }
 }
