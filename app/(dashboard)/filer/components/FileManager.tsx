@@ -222,6 +222,8 @@ export function FileManager({
     },
     {
       refreshInterval: 5000,
+      // Keep active-job polling in background tabs within the job key and 120-poll cap.
+      refreshWhenHidden: true,
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
       shouldRetryOnError: false,
