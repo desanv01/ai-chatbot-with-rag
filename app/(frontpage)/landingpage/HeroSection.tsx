@@ -112,7 +112,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ session }) => {
             size="lg"
             className="group bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
           >
-            <Link href={session ? '/dashboard' : '/auth/signup'}>
+            <Link href={session ? '/chat' : '/signup'}>
               {session ? 'Go to Dashboard' : 'Get Started Free'}
               <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
             </Link>

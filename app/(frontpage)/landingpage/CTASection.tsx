@@ -67,7 +67,7 @@ export const CTASection: React.FC = () => {
               size="lg"
               className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-lg px-8"
             >
-              <Link href="/auth/signup">
+              <Link href="/signup">
                 Start Building for Free
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Link>
