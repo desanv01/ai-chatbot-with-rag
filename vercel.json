@@ -31,7 +31,8 @@
       "v1/phase8-grounded-long-answers": false,
       "v1/phase8-live-stream-evidence": false,
       "v1/phase8-hobby-duration": false,
-      "v1/phase8-landing-auth-links": false
+      "v1/phase8-landing-auth-links": false,
+      "v1/phase8-message-timestamps": false
     }
   }
 }

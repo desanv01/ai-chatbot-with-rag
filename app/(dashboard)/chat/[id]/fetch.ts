@@ -122,6 +122,7 @@ export function formatMessages(messageParts: MessagePart[]): UIMessage[] {
       currentMessage = {
         id: part.message_id,
         role: part.role as 'user' | 'assistant' | 'system',
+        metadata: { createdAt: part.created_at },
         parts: []
       };
       messages.set(part.message_id, currentMessage);
