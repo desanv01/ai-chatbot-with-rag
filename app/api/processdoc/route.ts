@@ -15,7 +15,8 @@ import { normalizeLlamaParsePages } from '@/lib/llamaparse-pages';
 
 export const dynamic = 'force-dynamic';
 
-export const maxDuration = 800;
+// The current hosted Hobby plan allows at most 300 seconds per invocation.
+export const maxDuration = 300;
 
 const embeddingModel = voyage('voyage-3-large');
 
@@ -299,7 +300,8 @@ async function processDocumentWithAgentChains(
 export async function POST(req: NextRequest) {
   const signal = AbortSignal.any([
     req.signal,
-    AbortSignal.timeout(10 * 60_000)
+    // Reserve 30 seconds before hosted termination for bounded failure cleanup.
+    AbortSignal.timeout(270_000)
   ]);
   try {
     const session = await getSession();
