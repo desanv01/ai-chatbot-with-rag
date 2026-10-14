@@ -385,17 +385,23 @@ const MessageInput: React.FC<MessageInputProps> = ({
           </Button>
 
           {status !== 'ready' && status !== 'error' ? (
-            <div
-              className="h-8 w-8 sm:h-10 sm:w-10 flex items-center justify-center border border-primary/30 cursor-pointer relative group rounded-lg bg-background"
+            <button
+              type="button"
+              aria-label="Stop response"
+              title="Stop response"
+              className="h-8 w-8 sm:h-10 sm:w-10 flex items-center justify-center border border-primary/30 cursor-pointer relative group rounded-lg bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               onClick={stop}
             >
-              <div className="flex items-center justify-center transition-opacity group-hover:opacity-0">
-                <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 text-primary animate-spin" />
-              </div>
-              <div className="absolute inset-0 hidden group-hover:flex items-center justify-center">
-                <Square size={14} className="text-red-500 sm:h-4 sm:w-4" />
-              </div>
-            </div>
+              <Loader2
+                aria-hidden="true"
+                className="absolute w-5 h-5 sm:w-6 sm:h-6 text-primary animate-spin"
+              />
+              <Square
+                aria-hidden="true"
+                size={10}
+                className="text-red-500 sm:h-3 sm:w-3"
+              />
+            </button>
           ) : (
             <Button
               type="submit"
