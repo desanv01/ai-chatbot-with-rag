@@ -10,7 +10,7 @@ const effects = [];
 const generic = new Proxy({ __esModule: true, default: 'fixture' }, { get: (target, key) => target[key] || (() => null) });
 const mocks = {
   'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-  react: { useState: value => [value, () => {}], useOptimistic: value => [value, () => {}], startTransition: () => {} },
+  react: { useState: value => [value, () => {}], useOptimistic: value => [value, () => {}], useSyncExternalStore: (_subscribe, _getSnapshot, getServerSnapshot) => getServerSnapshot(), startTransition: () => {} },
   '@ai-sdk/react': { useChat: value => { options = value; return { messages: [], status: 'ready' }; } },
   ai: { DefaultChatTransport },
   'next/navigation': { useParams: () => ({ id: currentId }), useRouter: () => ({ push: url => effects.push(['push', url]), refresh: () => effects.push(['refresh']) }) },

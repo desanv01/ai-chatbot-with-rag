@@ -20,6 +20,7 @@ const suites = [
   'upload-ui',
   'retrieval',
   'persistence',
+  'message-timestamps',
   'sdk-persistence-failure',
   'chat-finish'
 ];

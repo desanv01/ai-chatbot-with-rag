@@ -1,6 +1,11 @@
 'use client';
 
-import React, { useState, useOptimistic, startTransition } from 'react';
+import React, {
+  useSyncExternalStore,
+  useState,
+  useOptimistic,
+  startTransition
+} from 'react';
 import { useChat, type UIMessage } from '@ai-sdk/react';
 import { useParams } from 'next/navigation';
 import { useSWRConfig } from 'swr';
@@ -29,6 +34,10 @@ interface ChatProps {
   initialSelectedOption: string;
 }
 
+const subscribeToHydration = () => () => undefined;
+const getClientHydrationSnapshot = () => true;
+const getServerHydrationSnapshot = () => false;
+
 const ChatComponent: React.FC<ChatProps> = ({
   currentChat,
   chatId,
@@ -40,6 +49,11 @@ const ChatComponent: React.FC<ChatProps> = ({
   const { mutate } = useSWRConfig();
 
   const [isCopied, setIsCopied] = useState(false);
+  const hasMounted = useSyncExternalStore(
+    subscribeToHydration,
+    getClientHydrationSnapshot,
+    getServerHydrationSnapshot
+  );
   const [optimisticOption, setOptimisticOption] = useOptimistic<string, string>(
     initialSelectedOption,
     (_, newValue) => newValue
@@ -134,18 +148,25 @@ const ChatComponent: React.FC<ChatProps> = ({
               setTimeout(() => setIsCopied(false), 1000);
             };
 
-            // Get created at time
-            const createdAtTime = message.id
-              ? new Date().toLocaleTimeString([], {
+            const metadata = message.metadata;
+            const createdAt =
+              metadata &&
+              typeof metadata === 'object' &&
+              'createdAt' in metadata
+                ? metadata.createdAt
+                : undefined;
+            const createdAtDate =
+              hasMounted && typeof createdAt === 'string' && createdAt.trim()
+                ? new Date(createdAt)
+                : null;
+            const createdAtTime =
+              createdAtDate && !Number.isNaN(createdAtDate.getTime())
+                ? createdAtDate.toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
                   hour12: false
                 })
-              : new Date().toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: false
-                });
+                : null;
 
             return (
               <li key={`${message.id}-${index}`} className="my-4 mx-2">
@@ -171,9 +192,11 @@ const ChatComponent: React.FC<ChatProps> = ({
                         <h3 className="font-semibold text-sm">
                           {isUserMessage ? 'You' : 'AI Assistant'}
                         </h3>
-                        <p className="text-xs text-muted-foreground">
-                          {createdAtTime}
-                        </p>
+                        {createdAtTime && (
+                          <p className="text-xs text-muted-foreground">
+                            {createdAtTime}
+                          </p>
+                        )}
                       </div>
                       {!isUserMessage && (
                         <Button
