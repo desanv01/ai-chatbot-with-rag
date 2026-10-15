@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -16,26 +16,47 @@ import { Loader2 } from 'lucide-react';
 export default function ForgotPassword() {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const dialogVersion = useRef(0);
   const currentPathname = usePathname();
 
   const handleClickOpen = () => {
+    dialogVersion.current += 1;
+    setError('');
+    setSuccess('');
     setOpen(true);
   };
 
   const handleClose = () => {
+    dialogVersion.current += 1;
     setOpen(false);
     setError('');
+    setSuccess('');
   };
 
   const handleSubmit = async (formData: FormData) => {
+    if (success) return;
+    const submittedVersion = dialogVersion.current;
+    setError('');
+    setSuccess('');
     formData.append('currentPathname', currentPathname);
     const email = formData.get('email') as string;
     if (email.trim() === '') {
       setError('Email address is required');
       return;
     }
-    await resetPasswordForEmail(formData);
-    setError('');
+    try {
+      const result = await resetPasswordForEmail(formData);
+      if (submittedVersion !== dialogVersion.current) return;
+      if (result.success) {
+        setSuccess(result.message);
+      } else {
+        setError(result.message);
+      }
+    } catch {
+      if (submittedVersion !== dialogVersion.current) return;
+      setError('Unable to send the password reset email. Please try again.');
+    }
   };
 
   return (
@@ -75,9 +96,18 @@ export default function ForgotPassword() {
               autoComplete="email"
             />
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            {success && (
+              <p role="status" aria-live="polite" className="text-sm">
+                {success}
+              </p>
+            )}
 
-            <SubmitButton />
+            <SubmitButton disabled={Boolean(success)} />
 
             <div className="flex justify-end mt-2">
               <Button type="button" variant="ghost" onClick={handleClose}>
@@ -91,11 +121,11 @@ export default function ForgotPassword() {
   );
 }
 
-function SubmitButton() {
+function SubmitButton({ disabled }: { disabled: boolean }) {
   const { pending } = useFormStatus();
 
   return (
-    <Button type="submit" disabled={pending} className="w-full">
+    <Button type="submit" disabled={pending || disabled} className="w-full">
       {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Continue'}
     </Button>
   );
