@@ -34,7 +34,7 @@ interface ChatProps {
   initialSelectedOption: string;
 }
 
-const subscribeToHydration = () => () => {};
+const subscribeToHydration = () => () => undefined;
 const getClientHydrationSnapshot = () => true;
 const getServerHydrationSnapshot = () => false;
 
