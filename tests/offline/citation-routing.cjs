@@ -36,7 +36,39 @@ function flatten(tree) {
   if (Array.isArray(tree)) return tree.flatMap(flatten);
   return tree && typeof tree === 'object' ? [tree, ...flatten(tree.props?.children)] : [];
 }
+function loadCitationLink() {
+  const file = path.resolve(__dirname, '../../app/(dashboard)/chat/components/tools/MemoizedMarkdown.tsx');
+  const source = fs.readFileSync(file, 'utf8');
+  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let initializer;
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(tree) === 'createDocumentLink') {
+      initializer = node.initializer;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(tree);
+  assert.ok(initializer, 'Load the actual markdown citation-link builder');
+  const code = ts.transpileModule('module.exports = ' + initializer.getText(tree), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS }
+  }).outputText;
+  const fixtureModule = { exports: {} };
+  vm.runInNewContext(code, {
+    module: fixtureModule, URLSearchParams,
+    encodeBase64: (value) => Buffer.from(value, 'utf8').toString('base64')
+  });
+  return fixtureModule.exports;
+}
 async function main() {
+  const citationLink = loadCitationLink();
+  for (const title of ['a.pdf', 'ab.pdf', 'abc.pdf', 'hosted-fresh-orion-20261015.pdf', 'unusual 100% café.pdf', 'literal%2Fname.pdf', 'percent%zz.pdf', '雪 + #.pdf', '💾.pdf']) {
+    const link = citationLink('?pdf=' + encodeURIComponent(title) + '&p=3');
+    const query = new URL(link, 'https://example.invalid/chat/owned').searchParams;
+    const reference = query.get('pdf');
+    assert.equal(reference, Buffer.from(title, 'utf8').toString('base64'), 'Framework-decoded reference must retain raw base64: ' + title);
+    assert.equal(Buffer.from(reference, 'base64').toString('utf8'), title);
+    assert.equal(query.get('p'), '3', 'Physical citation page is preserved');
+  }
   const fresh = load('app/(dashboard)/chat/page.tsx');
   const saved = load('app/(dashboard)/chat/[id]/page.tsx');
   const preview = load('app/(dashboard)/filer/components/DocumentViewer.tsx', 'DocumentViewer');

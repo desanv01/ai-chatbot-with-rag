@@ -237,8 +237,8 @@ const MemoizedMarkdownBlock = memo(
       const newSearchParams = new URLSearchParams();
 
       if (pdfTitle) {
-        // Encode the PDF title
-        const encodedFilename = encodeURIComponent(encodeBase64(pdfTitle));
+        // Base64-encode the title; URLSearchParams handles URI escaping.
+        const encodedFilename = encodeBase64(pdfTitle);
         newSearchParams.set('pdf', encodedFilename);
       }
 

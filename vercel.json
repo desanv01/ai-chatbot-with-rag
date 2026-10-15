@@ -33,7 +33,8 @@
       "v1/phase8-hobby-duration": false,
       "v1/phase8-landing-auth-links": false,
       "v1/phase8-message-timestamps": false,
-      "v1/phase8-background-parser-polling": false
+      "v1/phase8-background-parser-polling": false,
+      "v1/hosted-citation-query-encoding": false
     }
   }
 }
