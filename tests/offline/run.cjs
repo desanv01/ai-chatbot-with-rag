@@ -13,6 +13,8 @@ for (const name of Object.keys(environment)) {
 }
 const suites = [
   'auth-security',
+  'auth-client-refresh',
+  'pdf-viewer',
   'provider-guards',
   'chat-attachments',
   'chat-attachment-storage',

@@ -124,6 +124,8 @@ const FilePreview = React.memo(
           variant="ghost"
           size="sm"
           onClick={onRemove}
+          aria-label={`Remove PDF: ${file.name}`}
+          title={`Remove PDF: ${file.name}`}
           disabled={disabled}
           className="transition-all hover:bg-bg-000/50 text-text-500 hover:text-text-200 group-focus-within/thumbnail:opacity-100 group-hover/thumbnail:opacity-100 opacity-0 w-5 h-5 absolute -top-2 -left-2 rounded-full border-0.5 border-border-300/25 bg-bg-000/90 backdrop-blur-sm flex items-center justify-center"
         >
@@ -431,6 +433,8 @@ const MessageInput: React.FC<MessageInputProps> = ({
               size="icon"
               variant="ghost"
               onClick={() => fileInputRef.current?.click()}
+              aria-label="Attach PDF"
+              title="Attach PDF"
               className="h-8 w-8 sm:h-10 sm:w-10 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors border border-primary/30 rounded-lg cursor-pointer"
               disabled={!canSend || isSubmitting}
             >
@@ -444,7 +448,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
             variant="ghost"
             className="h-8 w-8 sm:h-10 sm:w-10 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors border border-primary/30 rounded-lg"
           >
-            <Link href="/chat">
+            <Link href="/chat" aria-label="New chat" title="New chat">
               <Plus className="text-primary w-5 h-5 sm:w-6 sm:h-6" />
             </Link>
           </Button>
@@ -470,6 +474,8 @@ const MessageInput: React.FC<MessageInputProps> = ({
           ) : (
             <Button
               type="submit"
+              aria-label="Send message"
+              title="Send message"
               size="icon"
               variant="ghost"
               disabled={

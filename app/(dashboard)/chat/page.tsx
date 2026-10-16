@@ -25,7 +25,7 @@ export default async function ChatPage(props: PageProps) {
 
   return (
     <div className="flex w-full">
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         <ChatComponent
           chatId={createChatId}
           initialSelectedOption={selectedOption}

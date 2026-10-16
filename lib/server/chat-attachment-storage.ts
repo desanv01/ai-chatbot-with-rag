@@ -24,7 +24,7 @@ type AttachmentMetadata = {
   sha256: string;
 };
 
-// Local table typing until the authoritative generated schema includes this table.
+// Narrow projection for validated PDF metadata and the service-only reservation.
 type AttachmentDatabase = {
   public: {
     Tables: {
