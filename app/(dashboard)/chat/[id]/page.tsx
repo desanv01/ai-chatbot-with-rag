@@ -49,7 +49,7 @@ export default async function ChatPage(props: {
 
   return (
     <div className="flex w-full">
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         <ChatComponent
           currentChat={formattedMessages}
           chatId={id}

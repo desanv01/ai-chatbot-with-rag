@@ -77,7 +77,7 @@ export default function UserPdfViewer({
   }, [url]);
 
   return (
-    <div className="w-[55%] border-l border-slate-200 hidden sm:flex flex-col justify-start items-stretch overflow-hidden relative">
+    <div className="w-[55%] shrink-0 min-w-0 border-l border-slate-200 hidden sm:flex flex-col justify-start items-stretch overflow-hidden relative">
       <div className="absolute top-0 left-0 z-10 m-2">
         <TooltipProvider>
           <Tooltip>
@@ -110,7 +110,7 @@ export default function UserPdfViewer({
         <object
           data={blobUrl}
           type="application/pdf"
-          className="w-full h-full"
+          className="block min-w-0 w-full h-full"
           onLoad={() => setIsLoading(false)}
         >
           <p className="p-4 text-center">

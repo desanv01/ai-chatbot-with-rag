@@ -1,6 +1,6 @@
 # Private chat PDF attachments
 
-Status: **UNAPPLIED / UNDEPLOYED WIP**. This document describes the implementation contract, not live acceptance. Main owns release decisions, migration review and test results.
+The additive storage migration and reference handling are implemented. Environment-specific verification is tracked separately; deployment alone does not establish acceptance. Main owns release decisions and validation records.
 
 ## Storage and message limits
 
@@ -32,6 +32,6 @@ For the SQL integration checks, emit `node tests/sql/chat-attachments.cjs` into 
 
 ## Deployment and rollback
 
-Apply the reviewed additive DDL before deploying code that writes attachment references. The feature remains unapplied and undeployed until main records the corresponding release and verification results.
+Apply the reviewed additive DDL before deploying code that writes attachment references. Verify owner download, other-account denial, reference-only persistence, hydration and eventual cleanup in the target environment before closeout.
 
 Rolling back application code retains the additive bucket, tables, private objects and new rows. Never drop or delete the bucket/tables, remove preserved objects or rewrite originals as a rollback step. Old code cannot read new reference rows: select a feature-aware rollback target when those rows exist. A code rollback does not reverse the data format or establish cleanup acceptance.
