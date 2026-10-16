@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { NavMain } from './nav-main';
 import { NavUser } from './nav-user';
-import { NavAdmin } from './nav-admin';
 import { NavProfile } from './nav-profile';
 import {
   Sidebar,
@@ -82,8 +81,6 @@ export function AppSidebar({
       <SidebarContent>
         <NavProfile pathname={pathname} />
         <NavMain items={data.navMain} pathname={pathname} />
-
-        {isAdmin && <NavAdmin />}
       </SidebarContent>
       <SidebarFooter>
         <SidebarGroup>

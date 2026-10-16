@@ -7,40 +7,40 @@ import { Shield, Zap, Code2, Cloud, Sparkles, Layers } from 'lucide-react';
 const features = [
   {
     icon: Shield,
-    title: 'Enterprise Security',
+    title: 'PDF Upload',
     description:
-      'Bank-level encryption and security protocols to keep your data safe.',
+      'Add a PDF to your files for processing and document questions.',
     gradient: 'from-blue-500 to-cyan-500'
   },
   {
     icon: Zap,
-    title: 'Lightning Fast',
-    description: 'Optimized performance with edge computing and global CDN.',
+    title: 'Processing Status',
+    description: 'Check whether an uploaded document is processing, ready or failed.',
     gradient: 'from-yellow-500 to-orange-500'
   },
   {
     icon: Code2,
-    title: 'Developer First',
-    description: 'Beautiful APIs, comprehensive docs, and amazing DX.',
+    title: 'Document Questions',
+    description: 'Ask questions using the content of your ready documents.',
     gradient: 'from-purple-500 to-pink-500'
   },
   {
     icon: Cloud,
-    title: 'Cloud Native',
+    title: 'Source Citations',
     description:
-      'Built for scale with automatic backups and disaster recovery.',
+      'Follow answer citations to the referenced PDF page and review the source.',
     gradient: 'from-green-500 to-emerald-500'
   },
   {
     icon: Sparkles,
-    title: 'AI Powered',
-    description: 'Smart features powered by cutting-edge machine learning.',
+    title: 'Saved History',
+    description: 'Return to saved conversations and review previous questions and answers.',
     gradient: 'from-indigo-500 to-purple-500'
   },
   {
     icon: Layers,
-    title: 'Composable',
-    description: 'Modular architecture that grows with your needs.',
+    title: 'Your Account',
+    description: 'Sign in to access the files and conversations associated with your account.',
     gradient: 'from-pink-500 to-rose-500'
   }
 ];
@@ -75,11 +75,10 @@ export const FeaturesSection: React.FC = () => {
           className="text-center mb-16"
         >
           <h2 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
-            Powerful Features for Modern Apps
+            From PDFs to Document Conversations
           </h2>
           <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-            Everything you need to build, deploy, and scale your applications
-            with confidence.
+            Upload documents, check their status, and review answers alongside sources.
           </p>
         </motion.div>
 

@@ -42,7 +42,7 @@ export default function PersonalInfoCard({
       primary: 'Education',
       secondary: userAttributes.education
     }
-  ];
+  ].filter((item) => item.secondary.trim().length > 0);
 
   return (
     <Card className="rounded-2xl shadow-lg overflow-hidden backdrop-blur-sm bg-card/90 border-primary/10 pt-0">
