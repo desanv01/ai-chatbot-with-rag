@@ -129,7 +129,9 @@ function builder(table, initialMode = 'lookup', initialData) {
               error: null
             };
           return {
-            data: state.existing ? (state.existingRecord ?? { id: 'old' }) : null,
+            data: state.existing
+              ? (state.existingRecord ?? { id: 'old' })
+              : null,
             error: state.lookupError ? { message: 'private db' } : null
           };
         })
@@ -160,7 +162,7 @@ const admin = {
       },
       remove() {
         state.removed++;
-        return Promise.resolve({error:null});
+        return Promise.resolve({ error: null });
       }
     })
   }
@@ -188,7 +190,14 @@ const mocks = {
       assert.equal(fileName, 'fixture.pdf');
       assert.equal(filePath, 'owner/new.pdf');
       state.queued++;
-      return {job: {id:'durable-job',documentId:'new-document',status:'queued'},dispatchPending:false};
+      return {
+        job: {
+          id: 'durable-job',
+          documentId: 'new-document',
+          status: 'queued'
+        },
+        dispatchPending: false
+      };
     }
   },
   '@/lib/server/document-job-token': {
@@ -350,23 +359,55 @@ async function run() {
   );
   const processPost = load('app/api/processdoc/route.ts').POST;
   const cleanupPost = load('app/api/upload/cleanup/route.ts').POST;
-  reset({existing:true});
-  assert.equal((await cleanupPost(request({filePath:'owner/new.pdf'}))).status,409);
-  assert.equal(state.removed,0);
-  reset({lookupError:true});
-  assert.equal((await cleanupPost(request({filePath:'owner/new.pdf'}))).status,503);
-  assert.equal(state.removed,0);
+  reset({ existing: true });
+  assert.equal(
+    (await cleanupPost(request({ filePath: 'owner/new.pdf' }))).status,
+    409
+  );
+  assert.equal(state.removed, 0);
+  reset({ lookupError: true });
+  assert.equal(
+    (await cleanupPost(request({ filePath: 'owner/new.pdf' }))).status,
+    503
+  );
+  assert.equal(state.removed, 0);
   reset();
-  assert.equal((await cleanupPost(request({filePath:'other/new.pdf'}))).status,403);
-  assert.equal(state.removed,0);
-  assert.equal((await cleanupPost(request({filePath:'owner/new.pdf'}))).status,200);
-  assert.equal(state.removed,1);
-  const recoveredId='55555555-5555-4555-8555-555555555555';
-  reset({existing:true,existingRecord:{id:'old',file_path:file.path,processing_job_id:recoveredId},durableJob:{id:recoveredId,documentId:'old',fileName:file.name,status:'parsing'}});
-  const recovered=await (await upload(request({uploadedFiles:[file]}))).json();
-  assert.equal(recovered.results[0].durable,true);assert.equal(recovered.results[0].jobId,recoveredId);
-  assert.equal(state.downloads,0);assert.equal(state.queued,0);assert.equal(state.fetches.length,0);
-  console.log('PASS reserved source cleanup denial and lost-ack durable response recovery without deletion, download or provider resubmission');
+  assert.equal(
+    (await cleanupPost(request({ filePath: 'other/new.pdf' }))).status,
+    403
+  );
+  assert.equal(state.removed, 0);
+  assert.equal(
+    (await cleanupPost(request({ filePath: 'owner/new.pdf' }))).status,
+    200
+  );
+  assert.equal(state.removed, 1);
+  const recoveredId = '55555555-5555-4555-8555-555555555555';
+  reset({
+    existing: true,
+    existingRecord: {
+      id: 'old',
+      file_path: file.path,
+      processing_job_id: recoveredId
+    },
+    durableJob: {
+      id: recoveredId,
+      documentId: 'old',
+      fileName: file.name,
+      status: 'parsing'
+    }
+  });
+  const recovered = await (
+    await upload(request({ uploadedFiles: [file] }))
+  ).json();
+  assert.equal(recovered.results[0].durable, true);
+  assert.equal(recovered.results[0].jobId, recoveredId);
+  assert.equal(state.downloads, 0);
+  assert.equal(state.queued, 0);
+  assert.equal(state.fetches.length, 0);
+  console.log(
+    'PASS reserved source cleanup denial and lost-ack durable response recovery without deletion, download or provider resubmission'
+  );
   const job = {
     jobId: 'job',
     jobToken: 'valid',
@@ -467,14 +508,27 @@ async function run() {
   assert.equal((await processPost(request(job))).status, 503);
   assert.equal(state.fetches.length, 0);
   process.env.VOYAGE_API_KEY = 'test-only';
-  const checkPost=load('app/api/checkdoc/route.ts').POST;
-  for(const status of ['parsing','ready','failed']){
-    reset({durableJob:{status,message:'Safe status',fileName:job.fileName,completedPages:1,totalPages:2}});
-    const checked=await checkPost(request(job));
-    assert.equal(checked.status,status==='failed'?502:200);assert.equal(state.fetches.length,0);
-    const processed=await processPost(request(job));
-    assert.equal(processed.status,status==='ready'?200:status==='failed'?409:202);
-    assert.equal(state.fetches.length,0);assert.equal(state.embeddings,0);
+  const checkPost = load('app/api/checkdoc/route.ts').POST;
+  for (const status of ['parsing', 'ready', 'failed']) {
+    reset({
+      durableJob: {
+        status,
+        message: 'Safe status',
+        fileName: job.fileName,
+        completedPages: 1,
+        totalPages: 2
+      }
+    });
+    const checked = await checkPost(request(job));
+    assert.equal(checked.status, status === 'failed' ? 502 : 200);
+    assert.equal(state.fetches.length, 0);
+    const processed = await processPost(request(job));
+    assert.equal(
+      processed.status,
+      status === 'ready' ? 200 : status === 'failed' ? 409 : 202
+    );
+    assert.equal(state.fetches.length, 0);
+    assert.equal(state.embeddings, 0);
   }
   console.log(
     'PASS reserve-before-provider, blank position, bounded batches, safe failures, ready finalization, no ready downgrade and missing-key gate'
