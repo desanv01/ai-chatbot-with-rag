@@ -38,7 +38,8 @@
       "v1/hosted-recovery-feedback": false,
       "v1/hosted-validation-evidence": false,
       "v1/ui-navigation-cleanup": false,
-      "v1/ui-content-cleanup": false
+      "v1/ui-content-cleanup": false,
+      "v1/private-chat-attachments": false
     }
   }
 }

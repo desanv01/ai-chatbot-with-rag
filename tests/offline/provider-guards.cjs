@@ -76,6 +76,8 @@ const mocks = {
   '@ai-sdk/google': { google: (id) => ({ provider: 'google', id }) },
   '@/lib/server/supabase': { getSession: async () => ({ sub: 'user' }) },
   './SaveToDbIncremental': { saveMessagesToDB: async () => {} },
+  // These provider-selection fixtures contain no attachment parts.
+  '@/lib/server/chat-attachment-messages': { resolveChatMessageAttachments: async messages => messages },
   './tools/documentChat': { searchUserDocument: () => ({}) },
   './tools/WebsiteSearchTool': { websiteSearchTool: {} },
   'server-only': {},

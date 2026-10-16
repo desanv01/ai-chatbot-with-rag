@@ -1,4 +1,10 @@
 import type { NextConfig } from 'next';
+import { withWorkflow } from 'workflow/next';
+
+// Never emit a filesystem-backed Local World on a hosted deployment.
+if (process.env.VERCEL === '1' && !process.env.VERCEL_DEPLOYMENT_ID) {
+  throw new Error('Workflow requires Vercel System Environment Variables.');
+}
 
 const nextConfig: NextConfig = {
   experimental: {
@@ -11,4 +17,4 @@ const nextConfig: NextConfig = {
   },
   poweredByHeader: false
 };
-export default nextConfig;
+export default withWorkflow(nextConfig);

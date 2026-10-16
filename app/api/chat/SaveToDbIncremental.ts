@@ -1,5 +1,6 @@
 import 'server-only';
 import { createServerSupabaseClient } from '@/lib/server/server';
+import { persistChatMessageAttachments } from '@/lib/server/chat-attachment-messages';
 import type { UIMessage } from 'ai';
 import type { TablesInsert } from '@/types/database';
 import { v5 as uuidv5 } from 'uuid';
@@ -85,10 +86,16 @@ export const saveMessagesToDB = async ({
 
     if (sessionError) throw sessionError;
 
+    const persistedMessages = await persistChatMessageAttachments(
+      messages,
+      userId,
+      chatSessionId
+    );
+
     // Convert UIMessages to message parts - EVERYTHING is in parts now!
     const allParts: PartsInsert[] = [];
 
-    messages.forEach((message) => {
+    persistedMessages.forEach((message) => {
       const originalMessageId = toDatabaseUuid(message.id);
       // For assistant messages in incremental saves, use the provided assistantMessageId
       const messageId =

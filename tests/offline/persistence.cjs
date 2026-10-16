@@ -34,6 +34,13 @@ const db = {
   })
 };
 const mocks = {
+  // Attachment authorization/storage is exercised by its dedicated suites.
+  '@/lib/server/chat-attachment-messages': {
+    persistChatMessageAttachments: async messages => messages,
+    resolveChatMessageAttachments: async messages => messages
+  },
+  '@/lib/server/chat-attachments': { CHAT_ATTACHMENT_REFERENCE_PREFIX: 'attachment://' },
+  '@/lib/server/chat-attachment-storage': { getChatAttachmentUrl: ref => '/api/chat/attachment?reference=' + encodeURIComponent(ref) },
   'server-only': {},
   uuid: uuid,
   '@/lib/server/server': { createServerSupabaseClient: async () => db },

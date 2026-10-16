@@ -43,3 +43,6 @@ jobs:
           SUPABASE_ANON_KEY: build-only-placeholder
           SUPABASE_SERVICE_ROLE_KEY: build-only-placeholder
           NEXT_PUBLIC_SITE_URL: http://localhost:3000
+
+      - name: Verify Workflow restart and replay with localhost fixtures
+        run: npm run test:workflow-runtime

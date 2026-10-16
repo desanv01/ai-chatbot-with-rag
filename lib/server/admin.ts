@@ -23,7 +23,7 @@ import { type Database } from '@/types/database';
  *
  * @returns Supabase Admin Client with service role privileges
  */
-export const createAdminClient = () => {
+export const createAdminClient = (options?: { requestTimeoutMs?: number }) => {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // ⚠️ Never expose this!
 
@@ -33,5 +33,30 @@ export const createAdminClient = () => {
     );
   }
 
-  return createSupabaseClient<Database>(supabaseUrl, supabaseServiceKey);
+  const requestTimeoutMs = options?.requestTimeoutMs;
+  if (
+    requestTimeoutMs !== undefined &&
+    (!Number.isInteger(requestTimeoutMs) ||
+      requestTimeoutMs < 1 ||
+      requestTimeoutMs > 60_000)
+  ) {
+    throw new Error('Invalid server request timeout');
+  }
+  return createSupabaseClient<Database>(
+    supabaseUrl,
+    supabaseServiceKey,
+    requestTimeoutMs === undefined
+      ? undefined
+      : {
+          global: {
+            fetch: (input, init) => {
+              const timeout = AbortSignal.timeout(requestTimeoutMs);
+              const signal = init?.signal
+                ? AbortSignal.any([init.signal, timeout])
+                : timeout;
+              return fetch(input, { ...init, signal });
+            }
+          }
+        }
+  );
 };
