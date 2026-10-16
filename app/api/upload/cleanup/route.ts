@@ -23,6 +23,33 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient();
 
+    try {
+      const { data: document, error: lookupError } = await supabase
+        .from('user_documents')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('file_path', filePath)
+        .limit(1)
+        .maybeSingle();
+      if (lookupError) {
+        return NextResponse.json(
+          { message: 'File cleanup is unavailable. Please retry later.' },
+          { status: 503 }
+        );
+      }
+      if (document) {
+        return NextResponse.json(
+          { message: 'File is reserved for document processing' },
+          { status: 409 }
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        { message: 'File cleanup is unavailable. Please retry later.' },
+        { status: 503 }
+      );
+    }
+
     const { error } = await supabase.storage
       .from(USER_FILES_BUCKET)
       .remove([filePath]);

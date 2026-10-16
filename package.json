@@ -28,7 +28,7 @@
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "typecheck": "tsc --noEmit --incremental false",
     "test:offline": "node tests/offline/run.cjs",
-    "test:workflow-runtime": "node tests/sql/attachment-workflow-runtime.cjs"
+    "test:workflow-runtime": "node tests/sql/attachment-workflow-runtime.cjs && node tests/sql/document-workflow-runtime.cjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.15",

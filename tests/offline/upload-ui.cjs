@@ -11,6 +11,8 @@ let slots = [],
   drop,
   poll,
   requests = [],
+  jobsFixture = [],
+  jobsPoll,
   scenario = 'success';
 const jsx = (type, props) => ({ type, props });
 const generic = new Proxy(
@@ -51,9 +53,19 @@ const mocks = {
   swr: {
     __esModule: true,
     default: (key, fetcher, options) => {
+      if (typeof key === 'string' && key.startsWith('/api/document-jobs')) {
+        jobsPoll = { key, fetcher, options };
+        return {
+          data: { jobs: jobsFixture },
+          error: null,
+          isLoading: false,
+          mutate: async () => ({ jobs: jobsFixture })
+        };
+      }
       poll = { key, fetcher, options };
+      return {};
     },
-    mutate: () => {}
+    mutate: async () => {}
   },
   '../action': { deleteUserFile: () => {} },
   '@/utils/base64': { encodeBase64: (x) => Buffer.from(x).toString('base64') },
@@ -80,7 +92,11 @@ async function fetchMock(url, opts) {
   if (url === '/api/uploaddoc')
     return scenario === 'upload-error'
       ? response({ error: 'fixture' }, 500)
-      : response({ results: [{ jobId: 'job', jobToken: 'token' }] });
+      : response({
+          results: [
+            { jobId: 'job', jobToken: 'token', durable: scenario === 'durable' }
+          ]
+        });
   if (url === '/api/upload/cleanup') return response({ status: 'ok' });
   if (url === '/api/checkdoc')
     return response({ status: scenario === 'pending' ? 'PENDING' : 'SUCCESS' });
@@ -140,6 +156,7 @@ function reset(mode) {
   slots = [];
   refs = [];
   requests = [];
+  jobsFixture = [];
   scenario = mode;
   render();
 }
@@ -186,14 +203,17 @@ async function run() {
   reset('upload-error');
   await start();
   const cleanup = requests.filter((x) => x.url === '/api/upload/cleanup');
-  assert.equal(cleanup.length, 1);
-  assert.equal(JSON.parse(cleanup[0].body).filePath, 'owner/staged.pdf');
+  assert.equal(
+    cleanup.length,
+    0,
+    'uncertain queue acknowledgment must retain source'
+  );
   const errorNode = find(render(), (n) => n.props?.role === 'status');
   assert.ok(errorNode);
-  assert.equal(errorNode.props.children, 'Error processing file');
+  assert.match(errorNode.props.children, /processing status/i);
   assert.equal(drop.disabled, false);
   console.log(
-    'PASS failed initial upload cleans only newly staged path and retains visible error'
+    'PASS failed queue acknowledgment preserves staged bytes and directs status recovery'
   );
   reset('pending');
   await start();
@@ -208,6 +228,45 @@ async function run() {
   assert.equal(requests.filter((x) => x.url === '/api/checkdoc').length, 120);
   console.log(
     'PASS polling stops at120 checks, retains timeout and permits new selection; hooks/network are local fixtures'
+  );
+  reset('durable');
+  await start();
+  assert.equal(
+    poll.key,
+    null,
+    'durable processing still requires browser parser polling'
+  );
+  assert.equal(
+    requests.filter(
+      (x) =>
+        x.url === '/api/processdoc' ||
+        x.url === '/api/checkdoc' ||
+        x.url === '/api/upload/cleanup'
+    ).length,
+    0
+  );
+  assert.match(
+    find(render(), (n) => n.props?.role === 'status').props.children,
+    /continues on the server/
+  );
+  assert.equal(jobsPoll.options.refreshInterval({ jobs: [] }), 0);
+  jobsFixture = [{ id: 'owned-active', status: 'indexing' }];
+  jobsPoll.options.onSuccess({ jobs: jobsFixture });
+  render();
+  assert.equal(jobsPoll.options.refreshInterval({ jobs: jobsFixture }), 5000);
+  const before = requests.length;
+  drop.onDrop(
+    [new File(['%PDF-fixture'], 'other.pdf', { type: 'application/pdf' })],
+    []
+  );
+  assert.equal(requests.length, before);
+  assert.equal(
+    drop.disabled,
+    true,
+    'another upload allowed while owned job is active'
+  );
+  console.log(
+    'PASS durable acknowledgment avoids legacy processing, preserves bytes and restores bounded status polling/global active-job upload guard'
   );
 }
 run().catch((e) => {
