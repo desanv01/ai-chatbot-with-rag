@@ -77,7 +77,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ session }) => {
         >
           <Sparkles className="w-4 h-4 text-primary" />
           <span className="text-sm font-medium">
-            Powered by Next.js 16 & Supabase
+            Ask questions about your PDFs
           </span>
         </motion.div>
 
@@ -87,7 +87,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ session }) => {
           transition={{ duration: 0.6, delay: 0.1 }}
           className="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-primary via-purple-500 to-pink-500 bg-clip-text text-transparent"
         >
-          {session ? `Welcome back!` : 'Build Amazing Apps'}
+          {session ? 'Welcome back to your PDFs' : 'Chat with Your PDFs'}
         </motion.h1>
 
         <motion.p
@@ -97,8 +97,8 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ session }) => {
           className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-3xl mx-auto"
         >
           {session
-            ? 'Your powerful development platform awaits. Continue building amazing experiences.'
-            : 'Experience the future of web development with our cutting-edge authentication and real-time features.'}
+            ? 'Open a saved conversation or upload a PDF to ask document questions.'
+            : 'Upload a PDF, ask questions about its contents, and follow citations back to the source.'}
         </motion.p>
 
         <motion.div
@@ -113,7 +113,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ session }) => {
             className="group bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
           >
             <Link href={session ? '/chat' : '/signup'}>
-              {session ? 'Go to Dashboard' : 'Get Started Free'}
+              {session ? 'Open Chat' : 'Create Account'}
               <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
             </Link>
           </Button>
@@ -130,29 +130,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ session }) => {
           </Button>
         </motion.div>
 
-        {/* Stats */}
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.5 }}
-          className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-8"
-        >
-          {[
-            { label: 'Active Users', value: '50K+' },
-            { label: 'Projects Built', value: '10K+' },
-            { label: 'Uptime', value: '99.9%' }
-          ].map((stat, index) => (
-            <div
-              key={index}
-              className="backdrop-blur-md bg-background/30 rounded-2xl p-6 border border-white/10"
-            >
-              <div className="text-3xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
-                {stat.value}
-              </div>
-              <div className="text-muted-foreground">{stat.label}</div>
-            </div>
-          ))}
-        </motion.div>
       </div>
     </section>
   );

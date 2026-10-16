@@ -53,12 +53,11 @@ export const CTASection: React.FC = () => {
           </motion.div>
 
           <h2 className="text-4xl md:text-5xl font-bold mb-6 bg-gradient-to-r from-primary via-purple-500 to-pink-500 bg-clip-text text-transparent">
-            Ready to Build Something Amazing?
+            Ready to Ask Your Documents?
           </h2>
 
           <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Join thousands of developers who are already building the future
-            with our platform. Start for free, scale as you grow.
+            Create an account to upload a PDF, start a document conversation, and review cited sources.
           </p>
 
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
@@ -68,14 +67,14 @@ export const CTASection: React.FC = () => {
               className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-lg px-8"
             >
               <Link href="/signup">
-                Start Building for Free
+                Create Account
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Link>
             </Button>
           </motion.div>
 
           <p className="mt-6 text-sm text-muted-foreground">
-            No credit card required • 14-day free trial • Cancel anytime
+            Upload a PDF and wait for it to be ready before asking questions.
           </p>
         </motion.div>
       </div>
