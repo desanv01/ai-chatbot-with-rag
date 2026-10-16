@@ -4,7 +4,6 @@ import {
   BadgeCheck,
   Check,
   ChevronsUpDown,
-  CreditCard,
   LogOut,
   Monitor,
   Moon,
@@ -34,8 +33,7 @@ import {
 } from '@/components/ui/sidebar';
 
 export function NavUser({
-  user,
-  hasActiveSubscription = false
+  user
 }: {
   user: {
     name: string;
@@ -108,23 +106,6 @@ export function NavUser({
                   My Profile
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/abonnement">
-                  <CreditCard />
-                  Subscription
-                </Link>
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              {!hasActiveSubscription && (
-                <DropdownMenuItem asChild>
-                  <Link title="Buy subscription" href="/kob">
-                    <CreditCard />
-                    Buy Subscription
-                  </Link>
-                </DropdownMenuItem>
-              )}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
