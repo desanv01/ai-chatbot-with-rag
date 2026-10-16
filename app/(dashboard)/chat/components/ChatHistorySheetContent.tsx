@@ -1,6 +1,7 @@
 'use client';
 
 import { type FC, useState } from 'react';
+import { toast } from 'sonner';
 import {
   fetchChatPreviews,
   deleteChatData,
@@ -124,14 +125,19 @@ const ChatHistorySheetContent: FC<{ onClose: () => void }> = ({ onClose }) => {
     if (chatToDelete) {
       setIsDeleting(true);
       try {
-        await deleteChatData(chatToDelete);
+        const result = await deleteChatData(chatToDelete);
+        if (!result.success) {
+          toast.error(result.message);
+          return;
+        }
         // Remove deleted chat from local state
         mutate();
         if (chatToDelete === currentChatId) {
           router.push('/chat');
         }
-      } catch (error) {
-        console.error('Failed to delete:', error);
+      } catch {
+        toast.error('Unable to delete this chat. Please try again.');
+        return;
       } finally {
         setIsDeleting(false);
       }

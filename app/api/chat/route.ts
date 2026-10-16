@@ -21,6 +21,7 @@ import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 import type { SharedV2ProviderMetadata } from '@ai-sdk/provider';
 
 import { getSession } from '@/lib/server/supabase';
+import { resolveChatMessageAttachments } from '@/lib/server/chat-attachment-messages';
 import { getProviderAvailability } from '@/lib/server/provider-availability';
 import {
   isChatModelValue,
@@ -94,10 +95,7 @@ function isGeminiNotFoundError(err: any): boolean {
 
 function readSelectedModel(body: any): string | null {
   const selectedModel =
-    body?.option ||
-    body?.model ||
-    body?.selectedModel ||
-    body?.providerModel;
+    body?.option || body?.model || body?.selectedModel || body?.providerModel;
 
   return typeof selectedModel === 'string' && selectedModel.trim()
     ? selectedModel
@@ -112,7 +110,6 @@ function pickSafeGoogleModel(
   selectedModel: string,
   freeOnly: boolean
 ): ChatModelValue {
-
   // ✅ Env must also be preview IDs (we normalize anyway)
   const defaultModel = normalizeGoogleModelId(
     process.env.GOOGLE_DEFAULT_MODEL || 'gemini-3-flash-preview'
@@ -266,7 +263,26 @@ export async function POST(req: NextRequest) {
     } satisfies OpenAIResponsesProviderOptions;
   }
 
-  const modelMessages = await convertToModelMessages(messages);
+  let resolvedMessages: UIMessage[];
+  try {
+    resolvedMessages = await resolveChatMessageAttachments(
+      messages,
+      userId,
+      chatSessionId
+    );
+  } catch (error) {
+    return NextResponse.json(
+      {
+        message:
+          error instanceof Error &&
+          error.message === 'Attachment history is too large. Start a new chat.'
+            ? error.message
+            : 'Unable to read a chat attachment. Remove it and attach the PDF again, then retry.'
+      },
+      { status: 400 }
+    );
+  }
+  const modelMessages = await convertToModelMessages(resolvedMessages);
   const latestUserMessage = [...messages]
     .reverse()
     .find((message) => message.role === 'user');

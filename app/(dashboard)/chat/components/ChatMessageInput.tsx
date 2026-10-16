@@ -29,6 +29,11 @@ import {
 import { ChatHistoryButton } from './ChatHistoryButton';
 import Link from 'next/link';
 import type { ChatModelOption } from '@/lib/model-config';
+import {
+  MAX_CHAT_ATTACHMENT_BYTES,
+  MAX_CHAT_ATTACHMENTS_PER_MESSAGE,
+  MAX_CHAT_ATTACHMENT_TOTAL_BYTES
+} from '@/lib/chat-attachment-limits';
 
 type ChatHelpers = ReturnType<typeof useChat>;
 
@@ -51,7 +56,15 @@ type ModelsApiResponse = {
 
 // FilePreview component stays the same
 const FilePreview = React.memo(
-  ({ file, onRemove }: { file: File; onRemove: () => void }) => {
+  ({
+    file,
+    onRemove,
+    disabled
+  }: {
+    file: File;
+    onRemove: () => void;
+    disabled: boolean;
+  }) => {
     const [previewUrl, setPreviewUrl] = useState<string>('');
 
     React.useEffect(() => {
@@ -111,6 +124,7 @@ const FilePreview = React.memo(
           variant="ghost"
           size="sm"
           onClick={onRemove}
+          disabled={disabled}
           className="transition-all hover:bg-bg-000/50 text-text-500 hover:text-text-200 group-focus-within/thumbnail:opacity-100 group-hover/thumbnail:opacity-100 opacity-0 w-5 h-5 absolute -top-2 -left-2 rounded-full border-0.5 border-border-300/25 bg-bg-000/90 backdrop-blur-sm flex items-center justify-center"
         >
           <X className="w-3 h-3" />
@@ -132,6 +146,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const attachedFilesRef = useRef<File[]>([]);
+  const submissionRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [input, setInput] = useState('');
 
   const [modelOptions, setModelOptions] = useState<ChatModelOption[]>([]);
@@ -205,6 +222,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
   }, [modelOptions, selectedOption, modelStatusText]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (submissionRef.current) return;
     setInput(e.target.value);
   };
 
@@ -221,24 +239,50 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const handleFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
+    if (submissionRef.current) return;
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.includes('pdf')) {
+    if (file.type !== 'application/pdf') {
       toast.error('Only PDF files are allowed');
       return;
     }
 
-    if (file.size > 3 * 1024 * 1024) {
-      toast.error('File is too large (max 3MB)');
+    if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+      toast.error('File is too large. Choose a PDF no larger than 3 MiB.');
       return;
     }
 
-    setAttachedFiles((prev) => [...prev, file]);
+    const currentFiles = attachedFilesRef.current;
+    if (currentFiles.length >= MAX_CHAT_ATTACHMENTS_PER_MESSAGE) {
+      toast.error('A message can contain at most 4 PDFs. Remove a file first.', {
+        id: 'chat-attachment-count-limit'
+      });
+      return;
+    }
+
+    const totalBytes = currentFiles.reduce(
+      (total, attached) => total + attached.size,
+      0
+    );
+    if (totalBytes + file.size > MAX_CHAT_ATTACHMENT_TOTAL_BYTES) {
+      toast.error(
+        'PDFs must total 3 MiB or less per message. Remove a file or choose a smaller PDF.',
+        { id: 'chat-attachment-total-limit' }
+      );
+      return;
+    }
+
+    const nextFiles = [...currentFiles, file];
+    attachedFilesRef.current = nextFiles;
+    setAttachedFiles(nextFiles);
   };
 
   const removeFile = (index: number) => {
-    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+    if (submissionRef.current) return;
+    const nextFiles = attachedFilesRef.current.filter((_, i) => i !== index);
+    attachedFilesRef.current = nextFiles;
+    setAttachedFiles(nextFiles);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -256,6 +300,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
           });
         };
         reader.onerror = reject;
+        reader.onabort = reject;
         reader.readAsDataURL(file);
       });
     });
@@ -264,26 +309,45 @@ const MessageInput: React.FC<MessageInputProps> = ({
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSend) return;
-    if (!input.trim() && attachedFiles.length === 0) return;
+    if (!canSend || submissionRef.current) return;
+    const files = attachedFilesRef.current;
+    if (!input.trim() && files.length === 0) return;
 
-    const parts: UIMessagePart<ChatHelpers, UITools>[] = [
-      { type: 'text', text: input }
-    ];
+    submissionRef.current = true;
+    setIsSubmitting(true);
+    try {
+      const parts: UIMessagePart<ChatHelpers, UITools>[] = [
+        { type: 'text', text: input }
+      ];
 
-    if (attachedFiles.length > 0) {
-      const fileParts = await filesToBase64(attachedFiles);
-      parts.push(...fileParts);
+      if (files.length > 0) {
+        try {
+          const fileParts = await filesToBase64(files);
+          parts.push(...fileParts);
+        } catch {
+          toast.error(
+            'Unable to read the attached PDFs. Try again or remove a file.'
+          );
+          return;
+        }
+      }
+
+      const submission = sendMessage(
+        { role: 'user', parts },
+        { body: { chatId, option: selectedOption } }
+      );
+
+      setInput('');
+      attachedFilesRef.current = [];
+      setAttachedFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      await submission;
+    } catch {
+      // Dispatched request errors are reported by the parent SDK onError handler.
+    } finally {
+      submissionRef.current = false;
+      setIsSubmitting(false);
     }
-
-    sendMessage(
-      { role: 'user', parts },
-      { body: { chatId, option: selectedOption } }
-    );
-
-    setInput('');
-    setAttachedFiles([]);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
@@ -295,6 +359,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
         type="file"
         ref={fileInputRef}
         onChange={handleFileChange}
+        disabled={isSubmitting}
         accept=".pdf,application/pdf"
         className="hidden"
       />
@@ -304,7 +369,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
         placeholder={modelStatusText ?? 'Type your message...'}
-        disabled={!canSend}
+        disabled={!canSend || isSubmitting}
         className="w-full pt-3 pb-1.5 min-h-0 max-h-40 resize-none border-0 shadow-none focus:ring-0 focus-visible:ring-0 focus:outline-none bg-transparent focus:bg-transparent dark:bg-transparent dark:focus:bg-transparent"
         rows={1}
       />
@@ -367,7 +432,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
               variant="ghost"
               onClick={() => fileInputRef.current?.click()}
               className="h-8 w-8 sm:h-10 sm:w-10 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors border border-primary/30 rounded-lg cursor-pointer"
-              disabled={!canSend}
+              disabled={!canSend || isSubmitting}
             >
               <Paperclip className="text-primary w-5 h-5 sm:w-6 sm:h-6" />
             </Button>
@@ -408,7 +473,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
               size="icon"
               variant="ghost"
               disabled={
-                !canSend || (!input.trim() && attachedFiles.length === 0)
+                !canSend ||
+                isSubmitting ||
+                (!input.trim() && attachedFiles.length === 0)
               }
               className="h-8 w-8 sm:h-10 sm:w-10 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors border border-primary/30 rounded-lg cursor-pointer"
             >
@@ -426,6 +493,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
                 key={file.name + index}
                 file={file}
                 onRemove={() => removeFile(index)}
+                disabled={isSubmitting}
               />
             ))}
           </div>

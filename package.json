@@ -27,7 +27,8 @@
     "start": "next start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "typecheck": "tsc --noEmit --incremental false",
-    "test:offline": "node tests/offline/run.cjs"
+    "test:offline": "node tests/offline/run.cjs",
+    "test:workflow-runtime": "node tests/sql/attachment-workflow-runtime.cjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.15",
@@ -82,7 +83,8 @@
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^13.0.0",
     "voyage-ai-provider": "^3.0.0",
-    "zod": "^4.0.16"
+    "workflow": "5.2.2",
+    "zod": "4.3.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

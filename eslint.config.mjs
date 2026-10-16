@@ -11,6 +11,8 @@ export default defineConfig([
     ignores: [
   '.next',
   'node_modules',
+  'app/.well-known/workflow/**',
+  '.workflow-data/**',
   '**/*.d.ts',
   'components/**/*',
   'supabase/.temp/**',
@@ -113,7 +115,7 @@ export default defineConfig([
   },
 
   {
-    files: ['tests/offline/**/*.cjs'],
+    files: ['tests/{offline,sql}/**/*.cjs'],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: {
       sourceType: 'commonjs',

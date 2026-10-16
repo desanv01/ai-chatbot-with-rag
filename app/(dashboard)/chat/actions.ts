@@ -9,6 +9,7 @@ import { cookies } from 'next/headers';
 import { isToday, isYesterday, subDays } from 'date-fns';
 import { TZDate } from '@date-fns/tz';
 import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
+import { ensureChatAttachmentMaintenanceForChatDeletion } from '@/lib/server/chat-attachment-maintenance-start';
 
 export interface ChatPreview {
   id: string;
@@ -156,18 +157,29 @@ export async function deleteChatData(chatId: string) {
   }
   const supabase = await createServerSupabaseClient();
   try {
+    const { data: ownedChat, error: ownershipError } = await supabase
+      .from('chat_sessions')
+      .select('id')
+      .eq('id', chatId)
+      .eq('user_id', session.sub)
+      .maybeSingle();
+    if (ownershipError) throw ownershipError;
+    if (!ownedChat) return { success: false, message: 'Chat not found' };
+    // Acknowledge the durable consumer before the cascade writes cleanup jobs.
+    await ensureChatAttachmentMaintenanceForChatDeletion(session.sub, chatId);
     // Delete chat session (message_parts will be deleted via CASCADE)
     const { error: sessionError } = await supabase
       .from('chat_sessions')
       .delete()
-      .eq('id', chatId);
+      .eq('id', chatId)
+      .eq('user_id', session.sub);
 
     if (sessionError) throw sessionError;
     refresh();
-    return { message: 'Chat data and references deleted successfully' };
+    return { success: true, message: 'Chat deleted successfully' };
   } catch (error) {
     console.error('Error during deletion:', error);
-    return { message: 'Error deleting chat data' };
+    return { success: false, message: 'Unable to delete this chat. Please try again.' };
   }
 }
 

@@ -24,6 +24,8 @@ async function makeResponse(failSave) {
   const attempts = [], saved = [];
   const selected = 'gemini-3-flash-preview';
   const mocks = {
+    // The SDK save-failure fixture has text only; attachment checks run separately.
+    '@/lib/server/chat-attachment-messages': { resolveChatMessageAttachments: async messages => messages },
     ai: sdk,
     'next/server': { NextResponse: class extends Response { static json(body, init) { return new Response(JSON.stringify(body), { ...init, headers: { 'content-type': 'application/json' } }); } } },
     '@ai-sdk/google': { google: () => model },

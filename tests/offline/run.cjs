@@ -14,6 +14,10 @@ for (const name of Object.keys(environment)) {
 const suites = [
   'auth-security',
   'provider-guards',
+  'chat-attachments',
+  'chat-attachment-storage',
+  'chat-attachment-cleanup',
+  'chat-attachment-input',
   'parser-pages',
   'citation-routing',
   'upload-processing',

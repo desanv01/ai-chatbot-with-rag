@@ -11,6 +11,8 @@
 
 # next.js
 /.next/
+/app/.well-known/workflow/
+/.workflow-data/
 /out/
 
 # production
@@ -60,3 +62,4 @@ dist/
 /.codex/
 /*.zip
 /AI_CHATBOT_PROJECT_ANALYSIS.md
+/.swc

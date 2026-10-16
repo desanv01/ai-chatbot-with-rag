@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createServerSupabaseClient } from '@/lib/server/server';
+import { getChatAttachmentUrl } from '@/lib/server/chat-attachment-storage';
 import { unstable_noStore as noStore } from 'next/cache';
 import type {
   UIMessage,
@@ -47,7 +48,9 @@ function reconstructPart(
         type: 'file',
         mediaType: part.file_mediatype || '',
         filename: part.file_filename || undefined,
-        url: part.file_url
+        url: part.file_url.startsWith('attachment://')
+          ? getChatAttachmentUrl(part.file_url)
+          : part.file_url
       };
       return filePart;
     }
