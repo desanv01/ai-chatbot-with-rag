@@ -12,6 +12,7 @@ import { login } from '../action';
 import { useRouter } from 'next/navigation';
 import { useFormStatus } from 'react-dom';
 import Link from 'next/link';
+import { mutate } from 'swr';
 
 export default function SignInCard() {
   const router = useRouter();
@@ -50,6 +51,11 @@ export default function SignInCard() {
           localStorage.setItem('rememberedEmail', email);
         } else {
           localStorage.removeItem('rememberedEmail');
+        }
+        try {
+          await mutate('/api/user-data');
+        } catch {
+          // A cache refresh failure must not interrupt successful sign-in.
         }
         router.back();
       }
@@ -95,7 +101,6 @@ export default function SignInCard() {
             placeholder="your@email.com"
             autoComplete="email"
             required
-            aria-label="email"
             className={emailError ? 'border-destructive' : ''}
             value={rememberedEmail}
             onChange={(event) => setRememberedEmail(event.target.value)}

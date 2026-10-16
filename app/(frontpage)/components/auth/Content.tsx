@@ -1,29 +1,28 @@
-import { Gavel, Search, MessageCircle, Gift } from 'lucide-react';
+import { FileText, MessageCircle, BookOpen, History } from 'lucide-react';
 
 const items = [
   {
-    icon: <Gavel className="h-5 w-5 text-muted-foreground" />,
-    title: 'Feature 1',
+    icon: <FileText className="h-5 w-5 text-muted-foreground" />,
+    title: 'Upload PDFs',
     description:
-      'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed euismod, nulla sit amet aliquam lacinia, nisl nisl aliquam nisl, nec aliquam nisl nisl sit amet nisl.'
-  },
-  {
-    icon: <Search className="h-5 w-5 text-muted-foreground" />,
-    title: 'Feature 2',
-    description:
-      'Praesent et eros eu felis eleifend egestas. Nullam at dolor quis ante porta tincidunt. Sed euismod, nulla sit amet aliquam lacinia, nisl nisl aliquam nisl.'
+      'Upload a PDF and wait for its status to show Ready before asking questions.'
   },
   {
     icon: <MessageCircle className="h-5 w-5 text-muted-foreground" />,
-    title: 'Feature 3',
-    description:
-      'Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Sed euismod, nulla sit amet aliquam lacinia, nisl nisl aliquam nisl.'
+    title: 'Ask document questions',
+    description: 'Ask questions about the content of your ready documents.'
   },
   {
-    icon: <Gift className="h-5 w-5 text-muted-foreground" />,
-    title: 'Free Trial',
+    icon: <BookOpen className="h-5 w-5 text-muted-foreground" />,
+    title: 'Review sources',
     description:
-      'Ut ornare lectus sit amet est placerat, nec elementum arcu dignissim. Sed euismod, nulla sit amet aliquam lacinia, nisl nisl aliquam nisl, nec aliquam nisl nisl sit amet nisl.'
+      'Follow citations to review the referenced physical pages in your PDFs.'
+  },
+  {
+    icon: <History className="h-5 w-5 text-muted-foreground" />,
+    title: 'Saved chats',
+    description:
+      'Revisit your own saved conversations to review earlier questions and answers.'
   }
 ];
 

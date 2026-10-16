@@ -7,33 +7,105 @@ export type Json =
   | Json[];
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never;
-    };
-    Views: {
-      [_ in never]: never;
-    };
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json;
-          operationName?: string;
-          query?: string;
-          variables?: Json;
-        };
-        Returns: Json;
-      };
-    };
-    Enums: {
-      [_ in never]: never;
-    };
-    CompositeTypes: {
-      [_ in never]: never;
-    };
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: '14.1';
   };
   public: {
     Tables: {
+      chat_attachment_cleanup_jobs: {
+        Row: {
+          attempts: number;
+          completed_at: string | null;
+          last_error: string | null;
+          lease_expires_at: string | null;
+          lease_token: string | null;
+          next_attempt_at: string;
+          object_path: string;
+          queued_at: string;
+        };
+        Insert: {
+          attempts?: number;
+          completed_at?: string | null;
+          last_error?: string | null;
+          lease_expires_at?: string | null;
+          lease_token?: string | null;
+          next_attempt_at?: string;
+          object_path: string;
+          queued_at?: string;
+        };
+        Update: {
+          attempts?: number;
+          completed_at?: string | null;
+          last_error?: string | null;
+          lease_expires_at?: string | null;
+          lease_token?: string | null;
+          next_attempt_at?: string;
+          object_path?: string;
+          queued_at?: string;
+        };
+        Relationships: [];
+      };
+      chat_attachment_maintenance: {
+        Row: {
+          lease_until: string | null;
+          run_id: string | null;
+          singleton: boolean;
+        };
+        Insert: {
+          lease_until?: string | null;
+          run_id?: string | null;
+          singleton?: boolean;
+        };
+        Update: {
+          lease_until?: string | null;
+          run_id?: string | null;
+          singleton?: boolean;
+        };
+        Relationships: [];
+      };
+      chat_attachment_objects: {
+        Row: {
+          byte_size: number;
+          chat_session_id: string;
+          created_at: string;
+          filename: string;
+          media_type: string;
+          object_path: string;
+          sha256: string;
+          user_id: string;
+        };
+        Insert: {
+          byte_size: number;
+          chat_session_id: string;
+          created_at?: string;
+          filename: string;
+          media_type: string;
+          object_path: string;
+          sha256: string;
+          user_id: string;
+        };
+        Update: {
+          byte_size?: number;
+          chat_session_id?: string;
+          created_at?: string;
+          filename?: string;
+          media_type?: string;
+          object_path?: string;
+          sha256?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'chat_attachment_objects_chat_session_id_fkey';
+            columns: ['chat_session_id'];
+            isOneToOne: false;
+            referencedRelation: 'chat_sessions';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
       chat_sessions: {
         Row: {
           chat_title: string | null;
@@ -42,7 +114,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           chat_title?: string | null;
           created_at?: string;
@@ -106,7 +177,6 @@ export type Database = {
           tool_websitesearchtool_toolcallid: string | null;
           type: string;
         };
-        ComputedFields: never;
         Insert: {
           chat_session_id: string;
           created_at?: string;
@@ -205,7 +275,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: number;
@@ -255,7 +324,6 @@ export type Database = {
           updated_at: string | null;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           ai_description?: string | null;
           ai_keyentities?: string[] | null;
@@ -306,7 +374,6 @@ export type Database = {
           page_number: number;
           text_content: string;
         };
-        ComputedFields: never;
         Insert: {
           document_id: string;
           embedding?: string | null;
@@ -339,7 +406,6 @@ export type Database = {
           role: string;
           stripe_customer_id: string | null;
         };
-        ComputedFields: never;
         Insert: {
           email?: string | null;
           full_name?: string | null;
@@ -361,6 +427,16 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      claim_chat_attachment_cleanup: {
+        Args: { p_limit: number; p_token: string };
+        Returns: {
+          object_path: string;
+        }[];
+      };
+      claim_chat_attachment_maintenance: {
+        Args: { p_previous_run_id?: string; p_run_id: string };
+        Returns: boolean;
+      };
       complete_document_processing: {
         Args: {
           p_document_id: string;
@@ -369,6 +445,10 @@ export type Database = {
           p_user_id: string;
         };
         Returns: undefined;
+      };
+      finish_chat_attachment_cleanup: {
+        Args: { p_path: string; p_success: boolean; p_token: string };
+        Returns: boolean;
       };
       match_documents: {
         Args: {
@@ -391,6 +471,31 @@ export type Database = {
           title: string;
           total_pages: number;
         }[];
+      };
+      reserve_chat_attachment: {
+        Args: {
+          p_byte_size: number;
+          p_chat_id: string;
+          p_filename: string;
+          p_sha256: string;
+          p_user_id: string;
+        };
+        Returns: {
+          byte_size: number;
+          chat_session_id: string;
+          created_at: string;
+          filename: string;
+          media_type: string;
+          object_path: string;
+          sha256: string;
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'chat_attachment_objects';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
       };
     };
     Enums: {
@@ -523,9 +628,6 @@ export type CompositeTypes<
     : never;
 
 export const Constants = {
-  graphql_public: {
-    Enums: {}
-  },
   public: {
     Enums: {}
   }
