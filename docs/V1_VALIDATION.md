@@ -154,3 +154,7 @@ Processing is request-bound. Failure status is best-effort; cancellation/termina
 | Placeholder build passes, or service behavior still fails | The build fixture proves compilation only. Preserve `.env.local` and the lockfile; use `npm ci` for locked dependency setup. Follow the authorized Phase8 checks to establish service health. Never deploy the fixture. |
 
 Main owns planning, audit, testing, GitHub review and final acceptance. Update this checklist with sanitized live receipts only after the corresponding authorized checks actually run; do not substitute credential presence or a placeholder build for operational evidence.
+
+### Durable processing follow-up — 17 October 2026
+
+The new durable-job implementation and its pending hosted gate are documented in [DURABLE_DOCUMENT_JOBS.md](DURABLE_DOCUMENT_JOBS.md). The older no-resume guidance above describes legacy jobs. New jobs retain server-side parser, page, metadata and indexing checkpoints and expose owner-only resume/cancellation controls. Local rollback SQL, offline API/provider/UI checks and an installed Workflow/Next restart test passed; these do not replace the pending additive migration and protected Preview acceptance. Unknown parser-submission outcomes remain blocked from automatic resubmission, and original documents must not be reindexed for this gate.

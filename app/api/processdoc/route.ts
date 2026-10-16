@@ -12,6 +12,7 @@ import { revalidatePath } from 'next/cache';
 import { isUserStoragePath } from '@/lib/document-path';
 import { verifyDocumentJobToken } from '@/lib/server/document-job-token';
 import { normalizeLlamaParsePages } from '@/lib/llamaparse-pages';
+import { getOwnedDocumentJob } from '@/lib/server/document-jobs';
 
 export const dynamic = 'force-dynamic';
 
@@ -332,6 +333,26 @@ export async function POST(req: NextRequest) {
         { error: 'Invalid document processing request' },
         { status: 400 }
       );
+    }
+
+    const job = await getOwnedDocumentJob(userId, jobId);
+    if (job) {
+      if (fileName.trim() !== job.fileName) {
+        return NextResponse.json(
+          { error: 'Invalid document processing request' },
+          { status: 400 }
+        );
+      }
+      if (job.status === 'ready') {
+        return NextResponse.json({ status: 'SUCCESS' });
+      }
+      if (job.status === 'failed' || job.status === 'cancelled') {
+        return NextResponse.json(
+          { error: job.message, status: 'FAILED' },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json({ status: 'PENDING' }, { status: 202 });
     }
 
     const requiredKeys = [

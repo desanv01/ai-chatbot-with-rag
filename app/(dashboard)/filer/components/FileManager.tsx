@@ -36,6 +36,7 @@ import Link from 'next/link';
 import { deleteUserFile } from '../action';
 import { encodeBase64 } from '@/utils/base64';
 import { MAX_PDF_SIZE } from '@/lib/document-limits';
+import type { DocumentJobStatusView } from '@/lib/document-job-types';
 import {
   Pagination,
   PaginationContent,
@@ -72,6 +73,8 @@ const SUPPORTED_FILE_TYPES: Record<string, string[]> = {
   'application/pdf': ['.pdf', '.PDF']
 };
 const MAX_STATUS_POLLS = 120;
+const isActiveDocumentJob = (job: DocumentJobStatusView) =>
+  ['queued', 'parsing', 'metadata', 'indexing'].includes(job.status);
 export function FileManager({
   documents,
   selectedDocFileName,
@@ -110,6 +113,119 @@ export function FileManager({
   const processedJobRef = useRef<string | null>(null);
   const statusPollCountRef = useRef(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const durableUploadRef = useRef(false);
+  const ownedJobsRef = useRef<DocumentJobStatusView[]>([]);
+  const pendingJobActionsRef = useRef(new Set<string>());
+  const [pendingJobActions, setPendingJobActions] = useState<string[]>([]);
+  const [jobActionError, setJobActionError] = useState('');
+  const jobSnapshotRef = useRef('');
+  const documentIds = paginatedDocuments.map((doc) => doc.id).join(',');
+  const jobsKey = documentIds
+    ? `/api/document-jobs?documentIds=${encodeURIComponent(documentIds)}`
+    : '/api/document-jobs';
+  const {
+    data: jobsData,
+    error: jobsError,
+    isLoading: jobsLoading,
+    mutate: refreshJobs
+  } = useSWR<{ jobs: DocumentJobStatusView[] }>(
+    jobsKey,
+    async (url: string) => {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok)
+        throw new Error('Document processing status is unavailable.');
+      const data = await response.json();
+      if (!Array.isArray(data.jobs)) {
+        throw new Error('Document processing status is unavailable.');
+      }
+      return data;
+    },
+    {
+      refreshInterval: (data) =>
+        data?.jobs.some(isActiveDocumentJob) ? 5000 : 0,
+      revalidateOnMount: true,
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+      shouldRetryOnError: false,
+      onSuccess: (data) => {
+        ownedJobsRef.current = data.jobs;
+        durableUploadRef.current = false;
+        const snapshot = JSON.stringify(
+          data.jobs.map((job) => [
+            job.id,
+            job.status,
+            job.completedPages,
+            job.updatedAt
+          ])
+        );
+        if (jobSnapshotRef.current && jobSnapshotRef.current !== snapshot) {
+          router.refresh();
+        }
+        jobSnapshotRef.current = snapshot;
+      }
+    }
+  );
+  const jobs = jobsData?.jobs ?? [];
+  const hasActiveDurableJob = jobs.some(isActiveDocumentJob);
+  const uploadBlocked =
+    isUploading ||
+    jobsLoading ||
+    Boolean(jobsError) ||
+    hasActiveDurableJob ||
+    pendingJobActions.length > 0;
+
+  const controlJob = async (
+    job: DocumentJobStatusView,
+    action: 'resume' | 'cancel'
+  ) => {
+    if (pendingJobActionsRef.current.has(job.id)) return;
+    const latestJob = ownedJobsRef.current.find((item) => item.id === job.id);
+    if (!latestJob) return;
+    if (
+      action === 'resume' &&
+      (!latestJob.canResume ||
+        latestJob.errorCode === 'source_invalid' ||
+        latestJob.errorCode === 'parser_submission_unknown' ||
+        durableUploadRef.current ||
+        uploadInFlightRef.current ||
+        pendingJobActionsRef.current.size > 0 ||
+        ownedJobsRef.current.some(
+          (other) => other.id !== job.id && isActiveDocumentJob(other)
+        ))
+    )
+      return;
+    if (action === 'cancel' && !latestJob.canCancel) return;
+    pendingJobActionsRef.current.add(job.id);
+    setPendingJobActions([...pendingJobActionsRef.current]);
+    setJobActionError('');
+    try {
+      const response = await fetch(`/api/document-jobs/${job.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      if (!response.ok) {
+        setJobActionError(
+          'Unable to update document processing. Refresh the status and try again.'
+        );
+      }
+    } catch {
+      setJobActionError(
+        'Unable to update document processing. Refresh the status before trying again.'
+      );
+    } finally {
+      try {
+        await refreshJobs();
+      } catch {
+        setJobActionError(
+          'Document processing status is unavailable. Refresh before trying again.'
+        );
+      }
+      router.refresh();
+      pendingJobActionsRef.current.delete(job.id);
+      setPendingJobActions([...pendingJobActionsRef.current]);
+    }
+  };
 
   // Delete state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -259,13 +375,21 @@ export function FileManager({
 
   const uploadFile = useCallback(
     async (file: File) => {
-      if (uploadInFlightRef.current) return;
+      if (
+        uploadInFlightRef.current ||
+        uploadBlocked ||
+        durableUploadRef.current ||
+        pendingJobActionsRef.current.size > 0 ||
+        ownedJobsRef.current.some(isActiveDocumentJob)
+      )
+        return;
       uploadInFlightRef.current = true;
       setIsUploading(true);
       setUploadProgress(0);
       setUploadStatus('Uploading...');
 
       let uploadedFilePath: string | null = null;
+      let queueAttempted = false;
 
       try {
         // Original name used for display/title in your app
@@ -316,6 +440,9 @@ export function FileManager({
         setUploadProgress(40);
         setUploadStatus('Preparing analysis...');
 
+        // Once queue submission begins, a lost browser response cannot prove
+        // that the server did not accept ownership of the source file.
+        queueAttempted = true;
         const processResponse = await fetch('/api/uploaddoc', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -334,6 +461,27 @@ export function FileManager({
         }
 
         const result = await processResponse.json();
+        if (result.results?.[0]?.durable === true) {
+          durableUploadRef.current = true;
+          void mutate('userFiles').catch(() => {
+            // The owned server job remains accepted if this optional cache refresh fails.
+          });
+          router.refresh();
+          try {
+            const refreshed = await refreshJobs();
+            if (refreshed) {
+              ownedJobsRef.current = refreshed.jobs;
+              durableUploadRef.current = false;
+            }
+          } catch {
+            // The accepted server job retains ownership even if status refresh fails.
+          } finally {
+            resetUploadState(
+              'Processing continues on the server; you can leave this page.'
+            );
+          }
+          return;
+        }
         setUploadProgress(50);
         setUploadStatus('Analyzing file...');
 
@@ -356,7 +504,7 @@ export function FileManager({
       } catch (error) {
         console.error('Upload error:', error);
 
-        if (uploadedFilePath) {
+        if (uploadedFilePath && !queueAttempted) {
           try {
             await fetch('/api/upload/cleanup', {
               method: 'POST',
@@ -368,17 +516,39 @@ export function FileManager({
           }
         }
 
+        if (queueAttempted) {
+          durableUploadRef.current = true;
+          router.refresh();
+          try {
+            const refreshed = await refreshJobs();
+            if (refreshed) {
+              ownedJobsRef.current = refreshed.jobs;
+              durableUploadRef.current = false;
+            }
+          } catch {
+            // Keep the source and require status recovery before another upload.
+          }
+        }
         resetUploadState(
-          error instanceof Error ? error.message : 'Upload failed'
+          queueAttempted
+            ? 'The processing acknowledgment could not be confirmed. Refresh processing status before uploading again; the source file has been preserved.'
+            : error instanceof Error
+              ? error.message
+              : 'Upload failed'
         );
       }
     },
-    [resetUploadState]
+    [resetUploadState, uploadBlocked, refreshJobs, router]
   );
 
   const onDrop = useCallback(
     (acceptedFiles: FileWithPath[], fileRejections: FileRejection[]) => {
-      if (isUploading) return;
+      if (
+        uploadBlocked ||
+        durableUploadRef.current ||
+        uploadInFlightRef.current
+      )
+        return;
       if (fileRejections.length > 0) {
         setUploadStatus('Select a PDF no larger than 25 MiB');
         return;
@@ -389,12 +559,12 @@ export function FileManager({
         setSelectedFile(file);
       }
     },
-    [isUploading]
+    [uploadBlocked]
   );
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedFile && !isUploading) {
+    if (selectedFile && !uploadBlocked) {
       await uploadFile(selectedFile);
     }
   };
@@ -409,9 +579,9 @@ export function FileManager({
     onDrop,
     accept: SUPPORTED_FILE_TYPES,
     maxSize: MAX_PDF_SIZE,
-    disabled: isUploading,
+    disabled: uploadBlocked,
     multiple: false,
-    noClick: selectedFile !== null || isUploading
+    noClick: selectedFile !== null || uploadBlocked
   });
 
   // Delete handlers
@@ -486,7 +656,11 @@ export function FileManager({
                   {isUploading && (
                     <div className="mt-2">
                       <Progress value={uploadProgress} className="h-1.5" />
-                      <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                      <p
+                        role="status"
+                        aria-live="polite"
+                        className="text-xs text-muted-foreground mt-1 flex items-center gap-1"
+                      >
                         {uploadStatus}
                         {uploadProgress < 100 && (
                           <Loader className="w-3 h-3 animate-spin" />
@@ -501,13 +675,19 @@ export function FileManager({
                     variant="ghost"
                     size="icon"
                     onClick={handleRemoveSelectedFile}
+                    aria-label="Remove selected PDF"
                   >
                     <X className="w-4 h-4" />
                   </Button>
                 )}
               </div>
               {!isUploading && (
-                <Button type="submit" size="sm" className="w-full">
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="w-full"
+                  disabled={uploadBlocked}
+                >
                   <Upload className="w-4 h-4 mr-2" />
                   Upload
                 </Button>
@@ -515,9 +695,57 @@ export function FileManager({
             </div>
           )}
           {!isUploading && uploadStatus && (
-            <p role="status" className="text-xs text-muted-foreground mt-2">
+            <p
+              role="status"
+              aria-live="polite"
+              className="text-xs text-muted-foreground mt-2"
+            >
               {uploadStatus}
             </p>
+          )}
+          {hasActiveDurableJob && (
+            <p
+              role="status"
+              aria-live="polite"
+              className="text-xs text-muted-foreground mt-2"
+            >
+              A document is processing on the server. Wait for it to finish or
+              cancel it before uploading another PDF.
+            </p>
+          )}
+          {(jobsError || jobActionError) && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="text-xs text-muted-foreground mt-2"
+            >
+              <p>
+                {jobActionError ||
+                  'Document processing status is unavailable. Refresh before uploading another PDF.'}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setJobActionError('');
+                  void refreshJobs()
+                    .then((data) => {
+                      if (data) {
+                        ownedJobsRef.current = data.jobs;
+                        durableUploadRef.current = false;
+                      }
+                    })
+                    .catch(() => {
+                      setJobActionError(
+                        'Document processing status is unavailable. Please try again.'
+                      );
+                    });
+                }}
+              >
+                Refresh processing status
+              </Button>
+            </div>
           )}
         </form>
 
@@ -536,6 +764,14 @@ export function FileManager({
                 const isSelected = isDocSelected(doc);
                 const isDeleting = deletingId === doc.id;
                 const docUrl = getDocUrl(doc.id);
+                const job = jobs.find((item) => item.documentId === doc.id);
+                const canResume =
+                  job?.canResume &&
+                  job.errorCode !== 'source_invalid' &&
+                  job.errorCode !== 'parser_submission_unknown';
+                const jobPending = job
+                  ? pendingJobActions.includes(job.id)
+                  : false;
                 const timeAgo = formatDistanceToNow(new Date(doc.created_at), {
                   addSuffix: true,
                   locale: enUS
@@ -571,26 +807,28 @@ export function FileManager({
                           </>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {doc.processing_status === 'ready'
-                          ? 'Ready'
-                          : doc.processing_status === 'failed'
-                            ? 'Failed'
-                            : 'Processing - not searchable'}
-                      </p>
-                      {doc.processing_status === 'failed' && (
+                      {!job && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {doc.processing_status === 'ready'
+                            ? 'Ready'
+                            : doc.processing_status === 'failed'
+                              ? 'Failed'
+                              : 'Processing - not searchable'}
+                        </p>
+                      )}
+                      {!job && doc.processing_status === 'failed' && (
                         <p className="text-xs text-muted-foreground mt-1">
                           {doc.processing_error?.startsWith(
                             'Legacy document requires review.'
                           )
                             ? 'Review and back up this existing document before deliberately deleting it and uploading it again.'
-                            : 'Processing did not complete. Delete the unfinished document and upload it again.'}
+                            : 'Legacy processing did not complete. Review the existing job before deliberately retrying.'}
                         </p>
                       )}
-                      {doc.processing_status === 'processing' && (
+                      {!job && doc.processing_status === 'processing' && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          If processing was interrupted, delete the unfinished
-                          document and upload it again.
+                          This legacy job cannot be resumed here. Check its
+                          existing processing outcome before retrying.
                         </p>
                       )}
                     </div>
@@ -600,6 +838,7 @@ export function FileManager({
                       className="flex-shrink-0 opacity-0 group-hover:opacity-100 h-8 w-8 text-muted-foreground hover:text-destructive"
                       onClick={(e) => handleDeleteClick(doc, e)}
                       disabled={isDeleting}
+                      aria-label={`Delete document: ${doc.title}`}
                     >
                       {isDeleting ? (
                         <Loader className="w-4 h-4 animate-spin" />
@@ -617,9 +856,66 @@ export function FileManager({
                 } ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`;
 
                 return (
-                  <Link key={doc.id} href={docUrl} className={className}>
-                    {content}
-                  </Link>
+                  <div key={doc.id}>
+                    <Link href={docUrl} className={className}>
+                      {content}
+                    </Link>
+                    {job && (
+                      <div className="px-3 pb-3 space-y-2">
+                        <div
+                          role="status"
+                          aria-live="polite"
+                          className="text-xs text-muted-foreground"
+                        >
+                          <p>Stage: {job.status}</p>
+                          <p>{job.message}</p>
+                          <p>
+                            {job.totalPages !== null
+                              ? `${job.completedPages} of ${job.totalPages} physical pages completed`
+                              : `${job.completedPages} physical pages completed; total pending`}
+                          </p>
+                        </div>
+                        {(canResume || job.canCancel) && (
+                          <div className="flex items-center gap-2">
+                            {canResume && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                aria-label={`Resume processing: ${doc.title}`}
+                                disabled={
+                                  jobPending ||
+                                  isUploading ||
+                                  Boolean(jobsError) ||
+                                  pendingJobActions.length > 0 ||
+                                  jobs.some(
+                                    (other) =>
+                                      other.id !== job.id &&
+                                      isActiveDocumentJob(other)
+                                  )
+                                }
+                                onClick={() => void controlJob(job, 'resume')}
+                              >
+                                Resume
+                              </Button>
+                            )}
+                            {job.canCancel && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                aria-label={`Cancel processing: ${doc.title}`}
+                                disabled={jobPending}
+                                onClick={() => void controlJob(job, 'cancel')}
+                              >
+                                Cancel
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>

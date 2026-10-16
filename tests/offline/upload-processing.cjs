@@ -27,6 +27,8 @@ function reset(patch = {}) {
     maxActive: 0,
     updates: [],
     completed: 0,
+    queued: 0,
+    removed: 0,
     vectorRows: [],
     markdown: 'fixture content',
     ...patch
@@ -39,6 +41,9 @@ function builder(table, initialMode = 'lookup', initialData) {
     signal;
   const result = {
     select() {
+      return this;
+    },
+    limit() {
       return this;
     },
     eq(key, value) {
@@ -124,7 +129,9 @@ function builder(table, initialMode = 'lookup', initialData) {
               error: null
             };
           return {
-            data: state.existing ? { id: 'old' } : null,
+            data: state.existing
+              ? (state.existingRecord ?? { id: 'old' })
+              : null,
             error: state.lookupError ? { message: 'private db' } : null
           };
         })
@@ -154,7 +161,8 @@ const admin = {
         return { data: state.blob, error: null };
       },
       remove() {
-        throw Error('Unexpected removal');
+        state.removed++;
+        return Promise.resolve({ error: null });
       }
     })
   }
@@ -175,6 +183,23 @@ const mocks = {
   'next/cache': { revalidatePath() {} },
   '@/lib/server/supabase': { getSession: async () => ({ sub: 'owner' }) },
   '@/lib/server/admin': { createAdminClient: () => admin },
+  '@/lib/server/document-jobs': {
+    getOwnedDocumentJob: async () => state.durableJob ?? null,
+    queueDocumentJob: async (userId, fileName, filePath) => {
+      assert.equal(userId, 'owner');
+      assert.equal(fileName, 'fixture.pdf');
+      assert.equal(filePath, 'owner/new.pdf');
+      state.queued++;
+      return {
+        job: {
+          id: 'durable-job',
+          documentId: 'new-document',
+          status: 'queued'
+        },
+        dispatchPending: false
+      };
+    }
+  },
   '@/lib/server/document-job-token': {
     createDocumentJobToken: () => 'valid',
     verifyDocumentJobToken: (token) => token === 'valid'
@@ -327,11 +352,62 @@ async function run() {
   reset();
   const good = await upload(request({ uploadedFiles: [file] }));
   assert.equal((await good.json()).results[0].jobToken, 'valid');
-  assert.equal(state.fetches.length, 1);
+  assert.equal(state.fetches.length, 0);
+  assert.equal(state.queued, 1);
   console.log(
-    'PASS parser upload rejects foreign paths, unsupported/oversize/header-invalid files and conflicts before provider calls'
+    'PASS durable upload guards reject invalid/foreign/conflicting PDFs; valid input queues without HTTP provider submission'
   );
   const processPost = load('app/api/processdoc/route.ts').POST;
+  const cleanupPost = load('app/api/upload/cleanup/route.ts').POST;
+  reset({ existing: true });
+  assert.equal(
+    (await cleanupPost(request({ filePath: 'owner/new.pdf' }))).status,
+    409
+  );
+  assert.equal(state.removed, 0);
+  reset({ lookupError: true });
+  assert.equal(
+    (await cleanupPost(request({ filePath: 'owner/new.pdf' }))).status,
+    503
+  );
+  assert.equal(state.removed, 0);
+  reset();
+  assert.equal(
+    (await cleanupPost(request({ filePath: 'other/new.pdf' }))).status,
+    403
+  );
+  assert.equal(state.removed, 0);
+  assert.equal(
+    (await cleanupPost(request({ filePath: 'owner/new.pdf' }))).status,
+    200
+  );
+  assert.equal(state.removed, 1);
+  const recoveredId = '55555555-5555-4555-8555-555555555555';
+  reset({
+    existing: true,
+    existingRecord: {
+      id: 'old',
+      file_path: file.path,
+      processing_job_id: recoveredId
+    },
+    durableJob: {
+      id: recoveredId,
+      documentId: 'old',
+      fileName: file.name,
+      status: 'parsing'
+    }
+  });
+  const recovered = await (
+    await upload(request({ uploadedFiles: [file] }))
+  ).json();
+  assert.equal(recovered.results[0].durable, true);
+  assert.equal(recovered.results[0].jobId, recoveredId);
+  assert.equal(state.downloads, 0);
+  assert.equal(state.queued, 0);
+  assert.equal(state.fetches.length, 0);
+  console.log(
+    'PASS reserved source cleanup denial and lost-ack durable response recovery without deletion, download or provider resubmission'
+  );
   const job = {
     jobId: 'job',
     jobToken: 'valid',
@@ -432,6 +508,28 @@ async function run() {
   assert.equal((await processPost(request(job))).status, 503);
   assert.equal(state.fetches.length, 0);
   process.env.VOYAGE_API_KEY = 'test-only';
+  const checkPost = load('app/api/checkdoc/route.ts').POST;
+  for (const status of ['parsing', 'ready', 'failed']) {
+    reset({
+      durableJob: {
+        status,
+        message: 'Safe status',
+        fileName: job.fileName,
+        completedPages: 1,
+        totalPages: 2
+      }
+    });
+    const checked = await checkPost(request(job));
+    assert.equal(checked.status, status === 'failed' ? 502 : 200);
+    assert.equal(state.fetches.length, 0);
+    const processed = await processPost(request(job));
+    assert.equal(
+      processed.status,
+      status === 'ready' ? 200 : status === 'failed' ? 409 : 202
+    );
+    assert.equal(state.fetches.length, 0);
+    assert.equal(state.embeddings, 0);
+  }
   console.log(
     'PASS reserve-before-provider, blank position, bounded batches, safe failures, ready finalization, no ready downgrade and missing-key gate'
   );

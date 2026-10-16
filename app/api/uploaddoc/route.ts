@@ -4,24 +4,42 @@ import { createAdminClient } from '@/lib/server/admin';
 import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
 import { createDocumentJobToken } from '@/lib/server/document-job-token';
 import { MAX_PDF_SIZE } from '@/lib/document-limits';
+import {
+  getOwnedDocumentJob,
+  queueDocumentJob
+} from '@/lib/server/document-jobs';
+import type { DocumentJobStatusView } from '@/lib/document-job-types';
 
 export const dynamic = 'force-dynamic';
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const supabaseAdmin = createAdminClient();
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function durableAcknowledgment(
+  userId: string,
+  fileName: string,
+  filePath: string,
+  job: DocumentJobStatusView,
+  dispatchPending: boolean
+) {
+  return {
+    file: fileName,
+    filePath,
+    status: 'success',
+    jobId: job.id,
+    jobToken: createDocumentJobToken({ jobId: job.id, userId, filePath }),
+    durable: true,
+    documentId: job.documentId,
+    jobStatus: job.status,
+    dispatchPending
+  };
+}
 
 export async function POST(req: NextRequest) {
   try {
-    // Check for Llama Cloud API key
-    if (!process.env.LLAMA_CLOUD_API_KEY) {
-      console.error('LLAMA_CLOUD_API_KEY is not configured');
-      return NextResponse.json(
-        { error: 'Server configuration error: LLAMA_CLOUD_API_KEY is missing' },
-        { status: 500 }
-      );
-    }
-
     const session = await getSession();
     if (!session) {
       return NextResponse.json(
@@ -34,6 +52,12 @@ export async function POST(req: NextRequest) {
 
     if (!Array.isArray(uploadedFiles) || uploadedFiles.length === 0) {
       return NextResponse.json({ error: 'No files provided' }, { status: 400 });
+    }
+    if (uploadedFiles.length !== 1) {
+      return NextResponse.json(
+        { error: 'Upload one PDF file at a time' },
+        { status: 400 }
+      );
     }
 
     const results = [];
@@ -66,7 +90,7 @@ export async function POST(req: NextRequest) {
         const { data: existingDocument, error: lookupError } =
           await supabaseAdmin
             .from('user_documents')
-            .select('id')
+            .select('id,file_path,processing_job_id')
             .eq('user_id', session.sub)
             .eq('title', file.name.trim())
             .maybeSingle();
@@ -81,6 +105,32 @@ export async function POST(req: NextRequest) {
           continue;
         }
         if (existingDocument) {
+          if (
+            existingDocument.file_path === file.path &&
+            typeof existingDocument.processing_job_id === 'string' &&
+            existingDocument.processing_job_id.length === 36 &&
+            UUID_PATTERN.test(existingDocument.processing_job_id)
+          ) {
+            const job = await getOwnedDocumentJob(
+              session.sub,
+              existingDocument.processing_job_id
+            );
+            if (
+              job?.documentId === existingDocument.id &&
+              job.fileName === file.name.trim()
+            ) {
+              results.push(
+                durableAcknowledgment(
+                  session.sub,
+                  file.name,
+                  file.path,
+                  job,
+                  job.status === 'queued'
+                )
+              );
+              continue;
+            }
+          }
           results.push({
             file: file.name,
             status: 'error',
@@ -127,46 +177,20 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        const formData = new FormData();
-        formData.append('file', data, file.name.trim());
-
-        const uploadResponse = await fetch(
-          'https://api.cloud.llamaindex.ai/api/v1/parsing/upload',
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${process.env.LLAMA_CLOUD_API_KEY}`,
-              Accept: 'application/json'
-            },
-            signal: AbortSignal.timeout(45_000),
-            body: formData
-          }
+        const { job, dispatchPending } = await queueDocumentJob(
+          session.sub,
+          file.name.trim(),
+          file.path
         );
-
-        if (!uploadResponse.ok) {
-          throw new Error(
-            `Failed to upload file: ${uploadResponse.statusText}`
-          );
-        }
-
-        const uploadResult = await uploadResponse.json();
-        if (!uploadResult || typeof uploadResult.id !== 'string') {
-          throw new Error('LlamaParse returned an invalid job identifier');
-        }
-
-        const jobToken = createDocumentJobToken({
-          jobId: uploadResult.id,
-          userId: session.sub,
-          filePath: file.path
-        });
-
-        results.push({
-          file: file.name,
-          filePath: file.path,
-          status: 'success',
-          jobId: uploadResult.id,
-          jobToken
-        });
+        results.push(
+          durableAcknowledgment(
+            session.sub,
+            file.name,
+            file.path,
+            job,
+            dispatchPending
+          )
+        );
       } catch (error) {
         console.error(
           `Error processing file ${file?.name || 'unknown'}:`,

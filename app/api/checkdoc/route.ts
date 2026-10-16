@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/server/supabase';
 import { verifyDocumentJobToken } from '@/lib/server/document-job-token';
+import { getOwnedDocumentJob } from '@/lib/server/document-jobs';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,15 +9,6 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.LLAMA_CLOUD_API_KEY) {
-      console.error('LLAMA_CLOUD_API_KEY is not configured');
-      return NextResponse.json(
-        {
-          error: 'Server configuration error: LLAMA_CLOUD_API_KEY is missing'
-        },
-        { status: 500 }
-      );
-    }
     const session = await getSession();
     if (!session) {
       return NextResponse.json(
@@ -38,6 +30,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: 'Invalid or expired document job token' },
         { status: 403 }
+      );
+    }
+
+    const job = await getOwnedDocumentJob(session.sub, jobId);
+    if (job) {
+      if (job.status === 'ready') {
+        return NextResponse.json({ status: 'SUCCESS' });
+      }
+      if (job.status === 'failed' || job.status === 'cancelled') {
+        return NextResponse.json(
+          { error: job.message, status: 'FAILED' },
+          { status: 502 }
+        );
+      }
+      return NextResponse.json({
+        status: 'PENDING',
+        jobStatus: job.status,
+        completedPages: job.completedPages,
+        totalPages: job.totalPages
+      });
+    }
+
+    if (!process.env.LLAMA_CLOUD_API_KEY) {
+      console.error('LLAMA_CLOUD_API_KEY is not configured');
+      return NextResponse.json(
+        { error: 'Server configuration error: LLAMA_CLOUD_API_KEY is missing' },
+        { status: 500 }
       );
     }
 
