@@ -1,6 +1,6 @@
 'use client';
 
-import { Settings2, CreditCard } from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -24,15 +24,6 @@ export function NavProfile({ pathname }: NavProfileProps) {
             <Link href="/profile">
               <Settings2 />
               <span>My Profile</span>
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-
-        <SidebarMenuItem>
-          <SidebarMenuButton asChild isActive={pathname === '/abonnement'}>
-            <Link href="/abonnement">
-              <CreditCard />
-              <span>Subscription</span>
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>

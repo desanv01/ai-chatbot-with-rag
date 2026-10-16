@@ -36,7 +36,8 @@
       "v1/phase8-background-parser-polling": false,
       "v1/hosted-citation-query-encoding": false,
       "v1/hosted-recovery-feedback": false,
-      "v1/hosted-validation-evidence": false
+      "v1/hosted-validation-evidence": false,
+      "v1/ui-navigation-cleanup": false
     }
   }
 }

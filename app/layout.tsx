@@ -12,11 +12,18 @@ const inter = Inter({
   adjustFontFallback: false,
   variable: '--font-Inter'
 });
+
+const metadataUrl =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+  process.env.NEXT_PUBLIC_VERCEL_URL?.trim() ||
+  'http://localhost:3000/';
+
 export const metadata: Metadata = {
-  metadataBase: new URL('http://localhost:3000/'),
-  title: 'Supabase SSR Auth Example',
-  description:
-    'An example demonstrating server-side rendering with authentication using Supabase.'
+  metadataBase: new URL(
+    /^https?:\/\//i.test(metadataUrl) ? metadataUrl : `https://${metadataUrl}`
+  ),
+  title: 'AI Chatbot with RAG',
+  description: 'Upload documents and chat with AI using their content.'
 };
 
 export default async function RootLayout({

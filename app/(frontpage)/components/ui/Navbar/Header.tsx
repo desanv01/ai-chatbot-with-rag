@@ -21,8 +21,6 @@ import {
   MessageSquare,
   Code2,
   Layers,
-  Settings,
-  CreditCard,
   FolderOpen,
   BotMessageSquare
 } from 'lucide-react';
@@ -73,18 +71,6 @@ const profileMenuItems = [
     text: 'My Files',
     description: 'View your uploaded documents',
     icon: FolderOpen
-  },
-  {
-    href: '/settings',
-    text: 'Settings',
-    description: 'Manage your settings',
-    icon: Settings
-  },
-  {
-    href: '/subscription',
-    text: 'Subscription',
-    description: 'Manage your subscription and payments',
-    icon: CreditCard
   }
 ];
 
