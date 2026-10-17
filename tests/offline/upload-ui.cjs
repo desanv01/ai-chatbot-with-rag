@@ -13,6 +13,7 @@ let slots = [],
   requests = [],
   jobsFixture = [],
   jobsPoll,
+  documentsFixture = [],
   scenario = 'success';
 const jsx = (type, props) => ({ type, props });
 const generic = new Proxy(
@@ -133,7 +134,7 @@ vm.runInNewContext(
 function render() {
   si = ri = 0;
   return mod.exports.FileManager({
-    documents: [],
+    documents: documentsFixture,
     selectedDocFileName: null,
     currentPage: 1
   });
@@ -157,6 +158,7 @@ function reset(mode) {
   refs = [];
   requests = [];
   jobsFixture = [];
+  documentsFixture = [];
   scenario = mode;
   render();
 }
@@ -267,6 +269,69 @@ async function run() {
   );
   console.log(
     'PASS durable acknowledgment avoids legacy processing, preserves bytes and restores bounded status polling/global active-job upload guard'
+  );
+  reset('durable');
+  const currentId = '66666666-6666-4666-8666-666666666666';
+  documentsFixture = [
+    {
+      id: currentId,
+      title: 'old.pdf',
+      created_at: '2026-10-17',
+      total_pages: 1,
+      file_path: 'owner/original.pdf',
+      processing_status: 'ready',
+      versionNumber: 1,
+      isCurrentVersion: true,
+      versionSeriesId: 'series'
+    }
+  ];
+  let versionTree = render();
+  assert.equal(
+    find(
+      versionTree,
+      (n) => n.props?.['aria-label'] === 'Delete document: old.pdf'
+    ),
+    undefined
+  );
+  const replaceButton = find(
+    versionTree,
+    (n) => n.props?.['aria-label'] === 'Replace PDF: old.pdf'
+  );
+  assert.ok(replaceButton);
+  replaceButton.props.onClick();
+  render();
+  await start();
+  for (const url of ['/api/upload/presigned-url', '/api/uploaddoc']) {
+    const payload = JSON.parse(requests.find((x) => x.url === url).body);
+    assert.equal(
+      url.includes('presigned')
+        ? payload.replacementDocumentId
+        : payload.uploadedFiles[0].replacementDocumentId,
+      currentId
+    );
+  }
+  assert.equal(requests.filter((x) => x.url === '/api/processdoc').length, 0);
+  reset('durable');
+  documentsFixture = [
+    {
+      ...documentsFixture[0],
+      id: currentId,
+      title: 'previous.pdf',
+      created_at: '2026-10-17',
+      processing_status: 'ready',
+      isCurrentVersion: false,
+      versionSeriesId: 'series'
+    }
+  ];
+  assert.equal(
+    find(
+      render(),
+      (n) => n.props?.['aria-label'] === 'Replace PDF: previous.pdf'
+    ),
+    undefined
+  );
+  console.log(
+    'PASS version replacement UI: current-only selection, target carried through both upload requests, historical deletion hidden and durable server processing preserved'
   );
 }
 run().catch((e) => {

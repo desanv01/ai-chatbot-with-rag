@@ -133,11 +133,13 @@ function load(file) {
       console,
       Date,
       require: (name) =>
-        name in mocks
-          ? mocks[name]
-          : name.startsWith('@/')
-            ? load(name.slice(2) + '.ts')
-            : require(name)
+        name === '@/lib/server/document-versions'
+          ? { isOwnedVersionedDocument: async () => false }
+          : name in mocks
+            ? mocks[name]
+            : name.startsWith('@/')
+              ? load(name.slice(2) + '.ts')
+              : require(name)
     }
   );
   return exports;

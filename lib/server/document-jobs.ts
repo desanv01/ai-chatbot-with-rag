@@ -65,6 +65,15 @@ type DocumentJobsDatabase = {
         Args: { p_user_id: string; p_file_name: string; p_file_path: string };
         Returns: DocumentJobRow[];
       };
+      reserve_document_replacement: {
+        Args: {
+          p_user_id: string;
+          p_target_document_id: string;
+          p_file_name: string;
+          p_file_path: string;
+        };
+        Returns: DocumentJobRow[];
+      };
       control_document_job: {
         Args: {
           p_job_id: string;
@@ -175,11 +184,13 @@ async function findOwnedJob(client: JobClient, userId: string, jobId: string) {
 export async function queueDocumentJob(
   userId: string,
   fileName: string,
-  filePath: string
+  filePath: string,
+  replacementDocumentId?: string
 ): Promise<JobDispatchResult> {
   try {
     const owner = await requireOwner(userId);
     if (
+      (replacementDocumentId !== undefined && !isUuid(replacementDocumentId)) ||
       typeof fileName !== 'string' ||
       fileName.length === 0 ||
       fileName.length > 255 ||
@@ -201,11 +212,19 @@ export async function queueDocumentJob(
     const admin = createAdminClient({
       requestTimeoutMs: 30_000
     }) as unknown as JobClient;
-    const { data, error } = await admin.rpc('reserve_document_job', {
-      p_user_id: owner.userId,
-      p_file_name: fileName,
-      p_file_path: filePath
-    });
+    const { data, error } =
+      replacementDocumentId === undefined
+        ? await admin.rpc('reserve_document_job', {
+            p_user_id: owner.userId,
+            p_file_name: fileName,
+            p_file_path: filePath
+          })
+        : await admin.rpc('reserve_document_replacement', {
+            p_user_id: owner.userId,
+            p_target_document_id: replacementDocumentId.toLowerCase(),
+            p_file_name: fileName,
+            p_file_path: filePath
+          });
     if (error) throw new Error('Document job could not be reserved.');
     const job = singleOwnedJob(data, owner.userId);
     if (job.file_name !== fileName || job.file_path !== filePath) {

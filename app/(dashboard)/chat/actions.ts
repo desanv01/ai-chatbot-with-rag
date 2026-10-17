@@ -10,6 +10,7 @@ import { isToday, isYesterday, subDays } from 'date-fns';
 import { TZDate } from '@date-fns/tz';
 import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
 import { ensureChatAttachmentMaintenanceForChatDeletion } from '@/lib/server/chat-attachment-maintenance-start';
+import { isOwnedVersionedDocument } from '@/lib/server/document-versions';
 
 export interface ChatPreview {
   id: string;
@@ -179,7 +180,10 @@ export async function deleteChatData(chatId: string) {
     return { success: true, message: 'Chat deleted successfully' };
   } catch (error) {
     console.error('Error during deletion:', error);
-    return { success: false, message: 'Unable to delete this chat. Please try again.' };
+    return {
+      success: false,
+      message: 'Unable to delete this chat. Please try again.'
+    };
   }
 }
 
@@ -222,6 +226,13 @@ export async function deleteFilterTagAndDocumentChunks(formData: FormData) {
       return {
         success: false,
         message: 'Document not found'
+      };
+    }
+
+    if (await isOwnedVersionedDocument(userId, file_id)) {
+      return {
+        success: false,
+        message: 'Versioned documents are retained to preserve citations.'
       };
     }
 

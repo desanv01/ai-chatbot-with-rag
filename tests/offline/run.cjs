@@ -22,6 +22,8 @@ const suites = [
   'chat-attachment-input',
   'document-job-steps',
   'document-jobs',
+  'document-versions',
+  'document-workflow-orchestration',
   'document-job-api',
   'parser-pages',
   'citation-routing',
