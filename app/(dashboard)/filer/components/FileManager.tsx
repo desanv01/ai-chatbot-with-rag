@@ -59,6 +59,10 @@ interface UserDocument {
   file_path: string | null;
   processing_status: string;
   processing_error: string | null;
+  versionNumber?: number | null;
+  versionSeriesId?: string | null;
+  isCurrentVersion?: boolean;
+  versionDisplayName?: string | null;
 }
 
 interface FileManagerProps {
@@ -113,6 +117,13 @@ export function FileManager({
   const processedJobRef = useRef<string | null>(null);
   const statusPollCountRef = useRef(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [replacementTarget, setReplacementTarget] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const replacementTargetRef = useRef<{ id: string; title: string } | null>(
+    null
+  );
   const durableUploadRef = useRef(false);
   const ownedJobsRef = useRef<DocumentJobStatusView[]>([]);
   const pendingJobActionsRef = useRef(new Set<string>());
@@ -234,20 +245,27 @@ export function FileManager({
   );
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const resetUploadState = useCallback((status = '') => {
-    uploadInFlightRef.current = false;
-    activeJobRef.current = null;
-    setShouldCheckStatus(false);
-    setIsUploading(false);
-    setUploadProgress(0);
-    setUploadStatus(status);
-    setCurrentJobId(null);
-    setCurrentJobToken(null);
-    setCurrentFileName(null);
-    setCurrentFilePath(null);
-    setSelectedFile(null);
-    formRef.current?.reset();
-  }, []);
+  const resetUploadState = useCallback(
+    (status = '', clearReplacement = false) => {
+      uploadInFlightRef.current = false;
+      activeJobRef.current = null;
+      setShouldCheckStatus(false);
+      setIsUploading(false);
+      setUploadProgress(0);
+      setUploadStatus(status);
+      setCurrentJobId(null);
+      setCurrentJobToken(null);
+      setCurrentFileName(null);
+      setCurrentFilePath(null);
+      setSelectedFile(null);
+      if (clearReplacement) {
+        replacementTargetRef.current = null;
+        setReplacementTarget(null);
+      }
+      formRef.current?.reset();
+    },
+    []
+  );
 
   // Explicit mutation: each successful parser job is processed once in this UI.
   const processCurrentJob = async () => {
@@ -283,7 +301,7 @@ export function FileManager({
       mutate('userFiles');
       router.refresh();
       setTimeout(() => {
-        if (activeJobRef.current === jobId) resetUploadState();
+        if (activeJobRef.current === jobId) resetUploadState('', true);
       }, 2000);
     } catch (error) {
       if (activeJobRef.current === jobId) {
@@ -383,7 +401,23 @@ export function FileManager({
         ownedJobsRef.current.some(isActiveDocumentJob)
       )
         return;
+      const replacement = replacementTargetRef.current;
+      if (
+        replacement &&
+        !documents.some(
+          (doc) =>
+            doc.id === replacement.id &&
+            doc.processing_status === 'ready' &&
+            doc.isCurrentVersion !== false
+        )
+      ) {
+        setUploadStatus(
+          'This document is no longer available for replacement. Cancel replacement and select a current ready document.'
+        );
+        return;
+      }
       uploadInFlightRef.current = true;
+      const replacementDocumentId = replacementTargetRef.current?.id;
       setIsUploading(true);
       setUploadProgress(0);
       setUploadStatus('Uploading...');
@@ -408,7 +442,8 @@ export function FileManager({
           body: JSON.stringify({
             fileName: originalFileName,
             fileSize: file.size,
-            fileType: file.type
+            fileType: file.type,
+            ...(replacementDocumentId ? { replacementDocumentId } : {})
           })
         });
 
@@ -451,7 +486,11 @@ export function FileManager({
               // IMPORTANT:
               // - name: keep ORIGINAL name so your UI/doc title stays clean
               // - path: unique file path returned from presigned endpoint
-              { name: originalFileName, path: uploadedFilePath }
+              {
+                name: originalFileName,
+                path: uploadedFilePath,
+                ...(replacementDocumentId ? { replacementDocumentId } : {})
+              }
             ]
           })
         });
@@ -477,7 +516,10 @@ export function FileManager({
             // The accepted server job retains ownership even if status refresh fails.
           } finally {
             resetUploadState(
-              'Processing continues on the server; you can leave this page.'
+              replacementDocumentId
+                ? 'Processing continues on the server; you can leave this page. The previous version stays current until the new PDF is ready.'
+                : 'Processing continues on the server; you can leave this page.',
+              true
             );
           }
           return;
@@ -538,7 +580,7 @@ export function FileManager({
         );
       }
     },
-    [resetUploadState, uploadBlocked, refreshJobs, router]
+    [resetUploadState, uploadBlocked, refreshJobs, router, documents]
   );
 
   const onDrop = useCallback(
@@ -570,6 +612,7 @@ export function FileManager({
   };
 
   const handleRemoveSelectedFile = () => {
+    if (uploadInFlightRef.current) return;
     setSelectedFile(null);
     resetUploadState();
     formRef.current?.reset();
@@ -585,16 +628,41 @@ export function FileManager({
   });
 
   // Delete handlers
+  const handleSelectReplacement = (doc: UserDocument) => {
+    if (
+      uploadBlocked ||
+      uploadInFlightRef.current ||
+      durableUploadRef.current ||
+      pendingJobActionsRef.current.size > 0 ||
+      ownedJobsRef.current.some(isActiveDocumentJob) ||
+      doc.processing_status !== 'ready' ||
+      doc.isCurrentVersion === false ||
+      replacementTargetRef.current
+    )
+      return;
+    replacementTargetRef.current = { id: doc.id, title: doc.title };
+    setReplacementTarget({ id: doc.id, title: doc.title });
+    resetUploadState(
+      `Replace ${doc.title}; old version stays available until the new PDF is ready.`
+    );
+  };
+
+  const handleCancelReplacement = () => {
+    if (uploadInFlightRef.current || isUploading) return;
+    resetUploadState('', true);
+  };
+
   const handleDeleteClick = (doc: UserDocument, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (doc.versionSeriesId) return;
     setDocumentToDelete(doc);
     setDeleteDialogOpen(true);
   };
 
   const handleConfirmDelete = async () => {
     const document = documentToDelete;
-    if (!document) return;
+    if (!document || document.versionSeriesId) return;
 
     setDeletingId(document.id);
     setDeleteDialogOpen(false);
@@ -623,6 +691,27 @@ export function FileManager({
           ref={formRef}
           className="p-4 border-b"
         >
+          {replacementTarget && (
+            <div className="space-y-2 mb-3">
+              <p
+                role="status"
+                aria-live="polite"
+                className="text-xs text-muted-foreground"
+              >
+                Replace {replacementTarget.title}; old version stays available
+                until the new PDF is ready.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isUploading}
+                onClick={handleCancelReplacement}
+              >
+                Cancel replacement
+              </Button>
+            </div>
+          )}
           {!selectedFile && !isUploading ? (
             <div
               {...getRootProps()}
@@ -795,6 +884,16 @@ export function FileManager({
                       >
                         {doc.title}
                       </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Version {doc.versionNumber ?? 1} ·{' '}
+                        {doc.isCurrentVersion !== false
+                          ? 'Current'
+                          : doc.processing_status !== 'ready'
+                            ? doc.processing_status === 'failed'
+                              ? 'Inactive new version; previous version remains current'
+                              : 'Pending new version — not active; previous version remains current'
+                            : 'Previous'}
+                      </p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Calendar className="w-3 h-3 flex-shrink-0" />
                         <span className="truncate">{timeAgo}</span>
@@ -832,20 +931,22 @@ export function FileManager({
                         </p>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="flex-shrink-0 opacity-0 group-hover:opacity-100 h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={(e) => handleDeleteClick(doc, e)}
-                      disabled={isDeleting}
-                      aria-label={`Delete document: ${doc.title}`}
-                    >
-                      {isDeleting ? (
-                        <Loader className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4" />
-                      )}
-                    </Button>
+                    {!doc.versionSeriesId && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="flex-shrink-0 opacity-0 group-hover:opacity-100 h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={(e) => handleDeleteClick(doc, e)}
+                        disabled={isDeleting}
+                        aria-label={`Delete document: ${doc.title}`}
+                      >
+                        {isDeleting ? (
+                          <Loader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                    )}
                   </>
                 );
 
@@ -860,6 +961,23 @@ export function FileManager({
                     <Link href={docUrl} className={className}>
                       {content}
                     </Link>
+                    {doc.processing_status === 'ready' &&
+                      doc.isCurrentVersion !== false && (
+                        <div className="px-3 pb-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            aria-label={`Replace PDF: ${doc.title}`}
+                            disabled={
+                              uploadBlocked || replacementTarget !== null
+                            }
+                            onClick={() => handleSelectReplacement(doc)}
+                          >
+                            Replace PDF
+                          </Button>
+                        </div>
+                      )}
                     {job && (
                       <div className="px-3 pb-3 space-y-2">
                         <div

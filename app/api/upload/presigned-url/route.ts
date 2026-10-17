@@ -6,6 +6,7 @@ import { getSession } from '@/lib/server/supabase';
 import { createUserDocumentPath, USER_FILES_BUCKET } from '@/lib/document-path';
 import { z } from 'zod';
 import { MAX_PDF_SIZE, MAX_TOTAL_DOCUMENT_SIZE } from '@/lib/document-limits';
+import { getOwnedReplacementTarget } from '@/lib/server/document-versions';
 
 const MAX_TOTAL_SIZE = MAX_TOTAL_DOCUMENT_SIZE;
 
@@ -17,7 +18,8 @@ const uploadRequestSchema = z.object({
     .max(255)
     .regex(/\.pdf$/i),
   fileSize: z.number().int().positive().max(MAX_PDF_SIZE),
-  fileType: z.string().optional()
+  fileType: z.string().optional(),
+  replacementDocumentId: z.string().uuid().optional()
 });
 
 export async function POST(request: NextRequest) {
@@ -34,55 +36,85 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { fileName, fileSize } = parsedBody.data;
+    const { fileName, fileSize, replacementDocumentId } = parsedBody.data;
 
     const session = await getSession();
     if (!session) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
     const userId = session.sub;
+    if (replacementDocumentId !== undefined) {
+      try {
+        const target = await getOwnedReplacementTarget(
+          userId,
+          replacementDocumentId
+        );
+        if (!target) {
+          return NextResponse.json(
+            { message: 'Document replacement target is unavailable' },
+            { status: 404 }
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { message: 'Could not check document replacement target' },
+          { status: 503 }
+        );
+      }
+    }
     const supabase = createAdminClient();
 
-    const { data: existingDocument, error: lookupError } = await supabase
-      .from('user_documents')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('title', fileName)
-      .maybeSingle();
+    if (replacementDocumentId === undefined) {
+      const { data: existingDocument, error: lookupError } = await supabase
+        .from('user_documents')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('title', fileName)
+        .maybeSingle();
 
-    if (lookupError) {
-      console.error('Error checking document filename:', lookupError);
-      return NextResponse.json(
-        { message: 'Could not check document filename' },
-        { status: 500 }
-      );
-    }
-    if (existingDocument) {
-      return NextResponse.json(
-        {
-          message:
-            'A document with this filename already exists. Choose a different filename.'
-        },
-        { status: 409 }
-      );
-    }
-
-    // Check current total size
-    const { data: files, error: listError } = await supabase.storage
-      .from(USER_FILES_BUCKET)
-      .list(userId);
-
-    if (listError) {
-      console.error('List error:', listError);
-      return NextResponse.json(
-        { message: 'Error checking storage limits', error: listError.message },
-        { status: 500 }
-      );
+      if (lookupError) {
+        console.error('Error checking document filename:', lookupError);
+        return NextResponse.json(
+          { message: 'Could not check document filename' },
+          { status: 500 }
+        );
+      }
+      if (existingDocument) {
+        return NextResponse.json(
+          {
+            message:
+              'A document with this filename already exists. Choose a different filename.'
+          },
+          { status: 409 }
+        );
+      }
     }
 
-    const currentTotalSize =
-      files?.reduce((total, file) => total + (file.metadata?.size || 0), 0) ||
-      0;
+    // Include every stored version, including files beyond Storage's default page.
+    let currentTotalSize = 0;
+    const pageSize = 100;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data: files, error: listError } = await supabase.storage
+        .from(USER_FILES_BUCKET)
+        .list(userId, {
+          limit: pageSize,
+          offset,
+          sortBy: { column: 'name', order: 'asc' }
+        });
+
+      if (listError) {
+        console.error('List error:', listError);
+        return NextResponse.json(
+          { message: 'Error checking storage limits' },
+          { status: 500 }
+        );
+      }
+
+      currentTotalSize +=
+        files?.reduce((total, file) => total + (file.metadata?.size || 0), 0) ||
+        0;
+      if (!files || files.length < pageSize) break;
+    }
 
     if (currentTotalSize + fileSize > MAX_TOTAL_SIZE) {
       return NextResponse.json(
@@ -104,7 +136,7 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Error creating signed URL:', error);
       return NextResponse.json(
-        { message: 'Failed to create upload URL', error: error.message },
+        { message: 'Failed to create upload URL' },
         { status: 500 }
       );
     }
@@ -133,8 +165,7 @@ export async function POST(request: NextRequest) {
     );
     return NextResponse.json(
       {
-        message: 'Internal server error',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        message: 'Internal server error'
       },
       { status: 500 }
     );

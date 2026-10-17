@@ -42,7 +42,8 @@
       "v1/private-chat-attachments": false,
       "v1/private-attachment-viewer": false,
       "v1/private-pdf-loading-state": false,
-      "v1/durable-document-jobs": false
+      "v1/durable-document-jobs": false,
+      "v1/immutable-document-replacements": false
     }
   }
 }

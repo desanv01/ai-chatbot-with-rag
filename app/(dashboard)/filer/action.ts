@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { getSession } from '@/lib/server/supabase';
 import { createServerSupabaseClient } from '@/lib/server/server';
 import { isUserStoragePath, USER_FILES_BUCKET } from '@/lib/document-path';
+import { isOwnedVersionedDocument } from '@/lib/server/document-versions';
 
 const deleteFileSchema = z.object({
   file_id: z.uuid()
@@ -48,8 +49,18 @@ export async function deleteUserFile(formData: FormData) {
       };
     }
 
+    if (await isOwnedVersionedDocument(userId, file_id)) {
+      return {
+        success: false,
+        message: 'Versioned documents are retained to preserve citations.'
+      };
+    }
+
     if (!isUserStoragePath(document.file_path, userId)) {
-      console.error('Document has an invalid Storage path:', document.file_path);
+      console.error(
+        'Document has an invalid Storage path:',
+        document.file_path
+      );
       return {
         success: false,
         message: 'Document Storage path is invalid'

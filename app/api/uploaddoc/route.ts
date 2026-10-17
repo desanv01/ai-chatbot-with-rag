@@ -9,6 +9,10 @@ import {
   queueDocumentJob
 } from '@/lib/server/document-jobs';
 import type { DocumentJobStatusView } from '@/lib/document-job-types';
+import {
+  getOwnedReplacementTarget,
+  isOwnedReplacementReservation
+} from '@/lib/server/document-versions';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,6 +63,18 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    const replacementDocumentId = uploadedFiles[0]?.replacementDocumentId;
+    if (
+      replacementDocumentId !== undefined &&
+      (typeof replacementDocumentId !== 'string' ||
+        replacementDocumentId.length !== 36 ||
+        !UUID_PATTERN.test(replacementDocumentId))
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid document replacement target' },
+        { status: 400 }
+      );
+    }
 
     const results = [];
 
@@ -87,13 +103,16 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        let existingQuery = supabaseAdmin
+          .from('user_documents')
+          .select('id,file_path,processing_job_id')
+          .eq('user_id', session.sub);
+        existingQuery =
+          replacementDocumentId === undefined
+            ? existingQuery.eq('title', file.name.trim())
+            : existingQuery.eq('file_path', file.path);
         const { data: existingDocument, error: lookupError } =
-          await supabaseAdmin
-            .from('user_documents')
-            .select('id,file_path,processing_job_id')
-            .eq('user_id', session.sub)
-            .eq('title', file.name.trim())
-            .maybeSingle();
+          await existingQuery.maybeSingle();
 
         if (lookupError) {
           console.error('Error checking document filename:', lookupError);
@@ -117,7 +136,14 @@ export async function POST(req: NextRequest) {
             );
             if (
               job?.documentId === existingDocument.id &&
-              job.fileName === file.name.trim()
+              job.fileName === file.name.trim() &&
+              (replacementDocumentId === undefined ||
+                (await isOwnedReplacementReservation(
+                  session.sub,
+                  job.id,
+                  replacementDocumentId,
+                  job.documentId
+                )))
             ) {
               results.push(
                 durableAcknowledgment(
@@ -138,6 +164,26 @@ export async function POST(req: NextRequest) {
               'A document with this filename already exists. Choose a different filename.'
           });
           continue;
+        }
+
+        if (replacementDocumentId !== undefined) {
+          try {
+            const target = await getOwnedReplacementTarget(
+              session.sub,
+              replacementDocumentId
+            );
+            if (!target) {
+              return NextResponse.json(
+                { error: 'Document replacement target is unavailable' },
+                { status: 404 }
+              );
+            }
+          } catch {
+            return NextResponse.json(
+              { error: 'Could not check document replacement target' },
+              { status: 503 }
+            );
+          }
         }
 
         const { data, error } = await supabaseAdmin.storage
@@ -180,7 +226,8 @@ export async function POST(req: NextRequest) {
         const { job, dispatchPending } = await queueDocumentJob(
           session.sub,
           file.name.trim(),
-          file.path
+          file.path,
+          replacementDocumentId?.toLowerCase()
         );
         results.push(
           durableAcknowledgment(

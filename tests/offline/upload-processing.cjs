@@ -183,13 +183,29 @@ const mocks = {
   'next/cache': { revalidatePath() {} },
   '@/lib/server/supabase': { getSession: async () => ({ sub: 'owner' }) },
   '@/lib/server/admin': { createAdminClient: () => admin },
+  '@/lib/server/document-versions': {
+    isOwnedReplacementReservation: async () =>
+      !state.wrongReplacementReservation,
+    getOwnedReplacementTarget: async () => {
+      if (state.replacementLookupFailure) throw Error('private lookup detail');
+      return state.replacementUnavailable
+        ? null
+        : { id: '66666666-6666-4666-8666-666666666666', title: 'fixture.pdf' };
+    }
+  },
   '@/lib/server/document-jobs': {
     getOwnedDocumentJob: async () => state.durableJob ?? null,
-    queueDocumentJob: async (userId, fileName, filePath) => {
+    queueDocumentJob: async (
+      userId,
+      fileName,
+      filePath,
+      replacementDocumentId
+    ) => {
       assert.equal(userId, 'owner');
       assert.equal(fileName, 'fixture.pdf');
       assert.equal(filePath, 'owner/new.pdf');
       state.queued++;
+      state.replacementDocumentId = replacementDocumentId;
       return {
         job: {
           id: 'durable-job',
@@ -335,6 +351,53 @@ async function run() {
   );
   const upload = load('app/api/uploaddoc/route.ts').POST;
   const file = { name: 'fixture.pdf', path: 'owner/new.pdf' };
+  const replacementId = '66666666-6666-4666-8666-666666666666';
+  reset({ existing: true });
+  assert.equal(
+    (await sign(request({ ...meta, replacementDocumentId: replacementId })))
+      .status,
+    200,
+    'replacement should permit same filename'
+  );
+  assert.equal(state.signed, 1);
+  reset({ replacementUnavailable: true });
+  assert.equal(
+    (await sign(request({ ...meta, replacementDocumentId: replacementId })))
+      .status,
+    404
+  );
+  assert.equal(state.signed, 0);
+  reset({ replacementLookupFailure: true });
+  assert.equal(
+    (await sign(request({ ...meta, replacementDocumentId: replacementId })))
+      .status,
+    503
+  );
+  reset();
+  assert.equal(
+    (await sign(request({ ...meta, replacementDocumentId: 'invalid' }))).status,
+    400
+  );
+  const replacement = await upload(
+    request({
+      uploadedFiles: [{ ...file, replacementDocumentId: replacementId }]
+    })
+  );
+  assert.equal((await replacement.json()).results[0].durable, true);
+  assert.equal(state.replacementDocumentId, replacementId);
+  reset({ replacementUnavailable: true });
+  assert.equal(
+    (
+      await upload(
+        request({
+          uploadedFiles: [{ ...file, replacementDocumentId: replacementId }]
+        })
+      )
+    ).status,
+    404
+  );
+  assert.equal(state.downloads, 0);
+  assert.equal(state.queued, 0);
   for (const [label, patch, entry] of [
     ['foreign', {}, { ...file, path: 'other/new.pdf' }],
     ['unsupported', {}, { ...file, name: 'file.html' }],
@@ -405,6 +468,45 @@ async function run() {
   assert.equal(state.downloads, 0);
   assert.equal(state.queued, 0);
   assert.equal(state.fetches.length, 0);
+  reset({
+    existing: true,
+    replacementUnavailable: true,
+    existingRecord: {
+      id: 'old',
+      file_path: file.path,
+      processing_job_id: recoveredId
+    },
+    durableJob: {
+      id: recoveredId,
+      documentId: 'old',
+      fileName: file.name,
+      status: 'ready'
+    }
+  });
+  const recoveredReplacement = await (
+    await upload(
+      request({
+        uploadedFiles: [{ ...file, replacementDocumentId: replacementId }]
+      })
+    )
+  ).json();
+  assert.equal(
+    recoveredReplacement.results[0].durable,
+    true,
+    'completed replacement acknowledgment must recover after the old target becomes historical'
+  );
+  assert.equal(state.downloads, 0);
+  assert.equal(state.queued, 0);
+  state.wrongReplacementReservation = true;
+  const mismatchedReplacement = await (
+    await upload(
+      request({
+        uploadedFiles: [{ ...file, replacementDocumentId: replacementId }]
+      })
+    )
+  ).json();
+  assert.equal(mismatchedReplacement.results[0].status, 'error');
+  assert.equal(state.downloads, 0);
   console.log(
     'PASS reserved source cleanup denial and lost-ack durable response recovery without deletion, download or provider resubmission'
   );

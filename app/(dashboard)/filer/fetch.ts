@@ -1,5 +1,6 @@
 import { cache } from 'react';
 import { createServerSupabaseClient } from '@/lib/server/server';
+import { getOwnedDocumentVersions } from '@/lib/server/document-versions';
 
 export const fetchUserFilesData = cache(async () => {
   const supabase = await createServerSupabaseClient();
@@ -30,8 +31,30 @@ export const fetchUserFilesData = cache(async () => {
     return null;
   }
 
-  return {
-    userId: userData.id,
-    userDocuments: userData.user_documents || []
-  };
+  try {
+    const documents = userData.user_documents || [];
+    const versions = await getOwnedDocumentVersions(
+      userData.id,
+      documents.map((document) => document.id)
+    );
+    const versionsByDocumentId = new Map(
+      versions.map((version) => [version.documentId, version])
+    );
+
+    return {
+      userId: userData.id,
+      userDocuments: documents.map((document) => {
+        const version = versionsByDocumentId.get(document.id);
+        return {
+          ...document,
+          versionNumber: version?.version ?? 1,
+          versionSeriesId: version?.seriesId ?? null,
+          isCurrentVersion: version?.isCurrent ?? true,
+          versionDisplayName: version?.displayName ?? document.title
+        };
+      })
+    };
+  } catch {
+    return null;
+  }
 });
