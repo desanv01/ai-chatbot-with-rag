@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible problem in the existing application.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use synthetic data and sanitized logs. Do not include secrets, tokens, signed URLs, private PDFs, user data or exploitable security details. For vulnerabilities, follow [SECURITY.md](https://github.com/desanv01/ai-chatbot-with-rag/blob/main/SECURITY.md) instead of opening a public issue.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Describe the starting state and the smallest sequence that reproduces the problem. Include a safe synthetic example if useful.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected and actual behavior
+      description: Explain what should happen and what you observed, including any visible error message.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Revision and runtime
+      description: Include the commit or release, local or hosted environment, Node/npm versions and browser/OS when relevant. Do not paste environment variables or protected deployment URLs.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Optional supporting evidence. Remove credentials, private content, identifiers and signed URLs before posting.

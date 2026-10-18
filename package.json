@@ -1,7 +1,7 @@
 {
   "name": "ai-chat-bot-with-rag",
   "version": "2.0.0",
-  "description": "A document-grounded AI chatbot with Supabase, LlamaParse, Voyage embeddings, web search, and multi-provider streaming.",
+  "description": "A personal PDF research assistant with grounded answers, page citations, durable processing and private document history.",
   "license": "MIT",
   "keywords": [
     "ai-chatbot",

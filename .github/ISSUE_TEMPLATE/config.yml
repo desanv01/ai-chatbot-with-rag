@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/desanv01/ai-chatbot-with-rag/blob/main/SECURITY.md
+    about: Follow the security policy for private vulnerability reporting; do not disclose exploitable details in public issues.

@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose an improvement to an existing workflow.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user need using non-sensitive examples. A request starts a scope discussion; it is not a roadmap commitment. Keep secrets and private documents out of public issues.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Who encounters the problem, and what makes the current behavior difficult?
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Desired workflow
+      description: Describe the steps a user should be able to take and the result they need. Include current workarounds if any.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Proposed scope and alternatives
+      description: Suggest the smallest useful change, alternatives considered and any known provider, configuration or data effects. Separate larger platform ideas from the current V1 scope.
+    validations:
+      required: true
