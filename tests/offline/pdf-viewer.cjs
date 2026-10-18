@@ -154,9 +154,9 @@ async function main() {
   assert.ok(
     r.nodes.some(
       (n) =>
-        n.type === 'object' &&
-        n.props.data === 'blob:fixture-0' &&
-        !n.props.onLoad
+        n.type === 'UI' &&
+        n.props.url === 'blob:fixture-0' &&
+        n.props.maxBytes === LIMIT
     )
   );
   assert.ok(r.nodes.some((n) => n.props['aria-label'] === 'Close PDF viewer'));
@@ -192,8 +192,9 @@ async function main() {
   assert.ok(
     r.nodes.some(
       (n) =>
-        n.type === 'object' &&
-        n.props.data === 'https://storage.test/signed.pdf'
+        n.type === 'UI' &&
+        n.props.url === 'https://storage.test/signed.pdf' &&
+        n.props.maxBytes === LIMIT
     )
   );
   r.cleanup();

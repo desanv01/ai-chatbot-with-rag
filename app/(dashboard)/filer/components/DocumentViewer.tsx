@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { X, Eye, FileText } from 'lucide-react';
 import Link from 'next/link';
+import PdfCanvasViewer from '@/components/pdf/PdfCanvasViewer';
 
 interface DocumentViewerProps {
   fileName: string | null;
@@ -32,7 +33,7 @@ export function DocumentViewer({ fileName, signedUrl }: DocumentViewerProps) {
           className="absolute top-3 right-3"
           asChild
         >
-          <Link href="/filer">
+          <Link href="/filer" aria-label="Close PDF viewer">
             <X className="w-4 h-4" />
           </Link>
         </Button>
@@ -43,8 +44,8 @@ export function DocumentViewer({ fileName, signedUrl }: DocumentViewerProps) {
   }
 
   return (
-    <div className="flex-1 relative">
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
+    <div className="flex-1 min-w-0 min-h-0 relative flex flex-col">
+      <div className="shrink-0 p-3 flex items-center justify-between gap-3">
         <div className="bg-background/90 backdrop-blur-sm rounded-lg px-3 py-1.5 text-sm font-medium truncate max-w-[70%]">
           {fileName}
         </div>
@@ -54,16 +55,14 @@ export function DocumentViewer({ fileName, signedUrl }: DocumentViewerProps) {
           className="bg-background/90 backdrop-blur-sm"
           asChild
         >
-          <Link href="/filer">
+          <Link href="/filer" aria-label="Close PDF viewer">
             <X className="w-4 h-4" />
           </Link>
         </Button>
       </div>
-      <iframe
-        src={signedUrl}
-        className="w-full h-full border-none"
-        title={`Preview: ${fileName}`}
-      />
+      <div className="flex-1 min-w-0 min-h-0">
+        <PdfCanvasViewer url={signedUrl} fileName={fileName} />
+      </div>
     </div>
   );
 }

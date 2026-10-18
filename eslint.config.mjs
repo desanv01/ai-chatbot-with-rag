@@ -15,6 +15,8 @@ export default defineConfig([
   '.workflow-data/**',
   '**/*.d.ts',
   'components/**/*',
+  '!components/pdf/',
+  '!components/pdf/PdfCanvasViewer.tsx',
   'supabase/.temp/**',
   'supabase/.branches/**'
 ]

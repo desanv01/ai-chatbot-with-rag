@@ -90,9 +90,9 @@ async function main() {
     assert.equal(tree.props.children[1].props.url, 'https://example.invalid/owned-attachment');
     const previewTree = preview({ fileName: value, signedUrl: 'https://example.invalid/owned-source' });
     const nodes = flatten(previewTree);
-    const frame = nodes.find(node => node.type === 'iframe');
-    assert.equal(frame.props.title, 'Preview: ' + value);
-    assert.equal(frame.props.src, 'https://example.invalid/owned-source');
+    const canvasViewer = nodes.find(node => node.type === '@/components/pdf/PdfCanvasViewer');
+    assert.equal(canvasViewer.props.fileName, value);
+    assert.equal(canvasViewer.props.url, 'https://example.invalid/owned-source');
     assert.ok(nodes.some(node => node.props?.children === value), 'Display title changed');
   }
   const url = 'https://example.invalid/a%2Fb?query=100%25';
