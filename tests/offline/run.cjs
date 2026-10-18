@@ -15,6 +15,8 @@ const suites = [
   'auth-security',
   'auth-client-refresh',
   'pdf-viewer',
+  'pdf-source',
+  'pdf-canvas',
   'provider-guards',
   'chat-attachments',
   'chat-attachment-storage',

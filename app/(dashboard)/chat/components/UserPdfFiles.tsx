@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { MAX_CHAT_ATTACHMENT_BYTES } from '@/lib/chat-attachment-limits';
+import PdfCanvasViewer from '@/components/pdf/PdfCanvasViewer';
 import {
   Tooltip,
   TooltipProvider,
@@ -153,8 +154,8 @@ export default function UserPdfViewer({
   }, [url]);
 
   return (
-    <div className="w-[55%] shrink-0 min-w-0 border-l border-slate-200 hidden sm:flex flex-col justify-start items-stretch overflow-hidden relative">
-      <div className="absolute top-0 left-0 z-10 m-2">
+    <div className="w-[55%] shrink-0 min-w-0 min-h-0 border-l border-slate-200 hidden sm:flex flex-col justify-start items-stretch overflow-hidden relative">
+      <div className="shrink-0 z-10 p-2">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -185,29 +186,20 @@ export default function UserPdfViewer({
         <div
           role="status"
           aria-label="Loading PDF"
-          className="absolute inset-0 flex items-center justify-center bg-white"
+          className="absolute inset-0 top-10 flex items-center justify-center bg-white"
         >
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       )}
 
       {!isLoading && blobUrl ? (
-        <object
-          data={blobUrl}
-          type="application/pdf"
-          className="block min-w-0 w-full h-full"
-        >
-          <p className="p-4 text-center">
-            Your browser does not support viewing PDF files directly.
-            <a
-              href={blobUrl}
-              download={fileName}
-              className="ml-2 text-blue-600 underline"
-            >
-              Download PDF
-            </a>
-          </p>
-        </object>
+        <div className="flex-1 min-w-0 min-h-0">
+          <PdfCanvasViewer
+            url={blobUrl}
+            fileName={fileName}
+            maxBytes={MAX_CHAT_ATTACHMENT_BYTES}
+          />
+        </div>
       ) : !isLoading && viewer.error ? (
         <div className="flex flex-col items-center justify-center h-full p-4">
           <p role="alert">

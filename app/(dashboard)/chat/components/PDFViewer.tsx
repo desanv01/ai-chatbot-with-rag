@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 import { decodeBase64 } from '@/utils/base64';
 import { useSearchParams, useRouter } from 'next/navigation';
+import PdfCanvasViewer from '@/components/pdf/PdfCanvasViewer';
 
 export default function DocumentViewer({
   fileName,
@@ -33,6 +34,7 @@ export default function DocumentViewer({
           variant="ghost"
           size="icon"
           onClick={handleClose}
+          aria-label="Close PDF viewer"
           className="absolute left-1 top-1 z-50 bg-background/70 hover:bg-background/90"
         >
           <X className="h-4 w-4" />
@@ -49,30 +51,25 @@ export default function DocumentViewer({
   const iframeId = `document-viewer-${fileName.replace(/[^a-zA-Z0-9]/g, '-')}`;
 
   return (
-    <div className="w-[55%] border-l border-border hidden sm:flex flex-row justify-center items-start overflow-hidden relative">
+    <div className="w-[55%] min-w-0 min-h-0 border-l border-border hidden sm:flex flex-row justify-center items-start overflow-hidden relative">
       <Button
         variant="ghost"
         size="icon"
         onClick={handleClose}
+        aria-label="Close PDF viewer"
         className="absolute left-1 top-1 z-50 bg-background/70 hover:bg-background/90"
       >
         <X className="h-4 w-4" />
       </Button>
 
-      <div className="relative w-full h-full">
-        {isPdf && (
-          <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-background/40 to-transparent h-10 z-10 dark:from-background/60" />
-        )}
-
+      <div
+        className={`relative w-full h-full min-w-0 min-h-0 ${isPdf ? 'pt-10' : ''}`}
+      >
         {isPdf ? (
-          <iframe
-            key={`pdf-viewer-${page}`}
-            id={iframeId}
-            src={`${signedUrl}#page=${page}`}
-            className="w-full h-full border-none"
-            title="PDF Viewer"
-            referrerPolicy="no-referrer"
-            aria-label={`PDF document: ${decodedFileName}`}
+          <PdfCanvasViewer
+            url={signedUrl}
+            fileName={decodedFileName}
+            initialPage={page}
           />
         ) : isOfficeDocument ? (
           <iframe
