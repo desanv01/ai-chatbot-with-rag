@@ -890,7 +890,7 @@ export function FileManager({
                           ? 'Current'
                           : doc.processing_status !== 'ready'
                             ? doc.processing_status === 'failed'
-                              ? 'Inactive new version; previous version remains current'
+                              ? 'Failed replacement — not current'
                               : 'Pending new version — not active; previous version remains current'
                             : 'Previous'}
                       </p>
