@@ -138,6 +138,261 @@ export type Database = {
           }
         ];
       };
+      document_job_maintenance: {
+        Row: {
+          lease_until: string | null;
+          run_id: string | null;
+          singleton: boolean;
+        };
+        Insert: {
+          lease_until?: string | null;
+          run_id?: string | null;
+          singleton?: boolean;
+        };
+        Update: {
+          lease_until?: string | null;
+          run_id?: string | null;
+          singleton?: boolean;
+        };
+        Relationships: [];
+      };
+      document_processing_jobs: {
+        Row: {
+          completed_pages: number;
+          created_at: string;
+          document_id: string;
+          error_code: string | null;
+          file_name: string;
+          file_path: string;
+          generation: number;
+          id: string;
+          metadata: Json | null;
+          parser_job_id: string | null;
+          parser_submit_started_at: string | null;
+          run_id: string | null;
+          source_sha256: string | null;
+          source_size: number | null;
+          status: string;
+          total_pages: number | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          completed_pages?: number;
+          created_at?: string;
+          document_id: string;
+          error_code?: string | null;
+          file_name: string;
+          file_path: string;
+          generation?: number;
+          id?: string;
+          metadata?: Json | null;
+          parser_job_id?: string | null;
+          parser_submit_started_at?: string | null;
+          run_id?: string | null;
+          source_sha256?: string | null;
+          source_size?: number | null;
+          status?: string;
+          total_pages?: number | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          completed_pages?: number;
+          created_at?: string;
+          document_id?: string;
+          error_code?: string | null;
+          file_name?: string;
+          file_path?: string;
+          generation?: number;
+          id?: string;
+          metadata?: Json | null;
+          parser_job_id?: string | null;
+          parser_submit_started_at?: string | null;
+          run_id?: string | null;
+          source_sha256?: string | null;
+          source_size?: number | null;
+          status?: string;
+          total_pages?: number | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'document_processing_jobs_document_id_fkey';
+            columns: ['document_id'];
+            isOneToOne: true;
+            referencedRelation: 'user_documents';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
+      document_processing_pages: {
+        Row: {
+          indexed: boolean;
+          job_id: string;
+          markdown: string;
+          page_number: number;
+        };
+        Insert: {
+          indexed?: boolean;
+          job_id: string;
+          markdown: string;
+          page_number: number;
+        };
+        Update: {
+          indexed?: boolean;
+          job_id?: string;
+          markdown?: string;
+          page_number?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'document_processing_pages_job_id_fkey';
+            columns: ['job_id'];
+            isOneToOne: false;
+            referencedRelation: 'document_processing_jobs';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
+      document_replacement_candidates: {
+        Row: {
+          candidate_document_id: string;
+          expected_active_document_id: string;
+          job_id: string;
+          promoted_at: string | null;
+          series_id: string;
+          target_document_id: string;
+          user_id: string;
+        };
+        Insert: {
+          candidate_document_id: string;
+          expected_active_document_id: string;
+          job_id: string;
+          promoted_at?: string | null;
+          series_id: string;
+          target_document_id: string;
+          user_id: string;
+        };
+        Update: {
+          candidate_document_id?: string;
+          expected_active_document_id?: string;
+          job_id?: string;
+          promoted_at?: string | null;
+          series_id?: string;
+          target_document_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'document_replacement_candidate_expected_active_document_id_fkey';
+            columns: ['expected_active_document_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_documents';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'document_replacement_candidates_candidate_document_id_fkey';
+            columns: ['candidate_document_id'];
+            isOneToOne: true;
+            referencedRelation: 'user_documents';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'document_replacement_candidates_job_id_fkey';
+            columns: ['job_id'];
+            isOneToOne: true;
+            referencedRelation: 'document_processing_jobs';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'document_replacement_candidates_series_id_fkey';
+            columns: ['series_id'];
+            isOneToOne: false;
+            referencedRelation: 'document_series';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'document_replacement_candidates_target_document_id_fkey';
+            columns: ['target_document_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_documents';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
+      document_series: {
+        Row: {
+          active_document_id: string;
+          created_at: string;
+          display_name: string;
+          id: string;
+          user_id: string;
+        };
+        Insert: {
+          active_document_id: string;
+          created_at?: string;
+          display_name: string;
+          id?: string;
+          user_id: string;
+        };
+        Update: {
+          active_document_id?: string;
+          created_at?: string;
+          display_name?: string;
+          id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'document_series_active_document_id_fkey';
+            columns: ['active_document_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_documents';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
+      document_series_members: {
+        Row: {
+          created_at: string;
+          document_id: string;
+          series_id: string;
+          user_id: string;
+          version: number;
+        };
+        Insert: {
+          created_at?: string;
+          document_id: string;
+          series_id: string;
+          user_id: string;
+          version: number;
+        };
+        Update: {
+          created_at?: string;
+          document_id?: string;
+          series_id?: string;
+          user_id?: string;
+          version?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'document_series_members_document_id_fkey';
+            columns: ['document_id'];
+            isOneToOne: true;
+            referencedRelation: 'user_documents';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'document_series_members_series_id_fkey';
+            columns: ['series_id'];
+            isOneToOne: false;
+            referencedRelation: 'document_series';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
       message_parts: {
         Row: {
           chat_session_id: string;
@@ -427,6 +682,19 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      begin_document_parser_submission: {
+        Args: { p_generation: number; p_job_id: string; p_run_id: string };
+        Returns: boolean;
+      };
+      checkpoint_document_job: {
+        Args: {
+          p_generation: number;
+          p_job_id: string;
+          p_patch: Json;
+          p_run_id: string;
+        };
+        Returns: boolean;
+      };
       claim_chat_attachment_cleanup: {
         Args: { p_limit: number; p_token: string };
         Returns: {
@@ -437,6 +705,28 @@ export type Database = {
         Args: { p_previous_run_id?: string; p_run_id: string };
         Returns: boolean;
       };
+      claim_document_job: {
+        Args: { p_generation: number; p_job_id: string; p_run_id: string };
+        Returns: boolean;
+      };
+      claim_document_job_maintenance: {
+        Args: { p_previous_run_id?: string; p_run_id: string };
+        Returns: boolean;
+      };
+      commit_document_job_page: {
+        Args: {
+          p_embedding: string;
+          p_generation: number;
+          p_job_id: string;
+          p_page_number: number;
+          p_run_id: string;
+        };
+        Returns: number;
+      };
+      complete_document_job: {
+        Args: { p_generation: number; p_job_id: string; p_run_id: string };
+        Returns: boolean;
+      };
       complete_document_processing: {
         Args: {
           p_document_id: string;
@@ -445,6 +735,44 @@ export type Database = {
           p_user_id: string;
         };
         Returns: undefined;
+      };
+      control_document_job: {
+        Args: { p_action: string; p_job_id: string; p_user_id: string };
+        Returns: {
+          completed_pages: number;
+          created_at: string;
+          document_id: string;
+          error_code: string | null;
+          file_name: string;
+          file_path: string;
+          generation: number;
+          id: string;
+          metadata: Json | null;
+          parser_job_id: string | null;
+          parser_submit_started_at: string | null;
+          run_id: string | null;
+          source_sha256: string | null;
+          source_size: number | null;
+          status: string;
+          total_pages: number | null;
+          updated_at: string;
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'document_processing_jobs';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      fail_document_job: {
+        Args: {
+          p_error_code: string;
+          p_generation: number;
+          p_job_id: string;
+          p_run_id: string;
+        };
+        Returns: boolean;
       };
       finish_chat_attachment_cleanup: {
         Args: { p_path: string; p_success: boolean; p_token: string };
@@ -472,6 +800,10 @@ export type Database = {
           total_pages: number;
         }[];
       };
+      promote_document_replacement: {
+        Args: { p_job_id: string };
+        Returns: boolean;
+      };
       reserve_chat_attachment: {
         Args: {
           p_byte_size: number;
@@ -496,6 +828,78 @@ export type Database = {
           isOneToOne: false;
           isSetofReturn: true;
         };
+      };
+      reserve_document_job: {
+        Args: { p_file_name: string; p_file_path: string; p_user_id: string };
+        Returns: {
+          completed_pages: number;
+          created_at: string;
+          document_id: string;
+          error_code: string | null;
+          file_name: string;
+          file_path: string;
+          generation: number;
+          id: string;
+          metadata: Json | null;
+          parser_job_id: string | null;
+          parser_submit_started_at: string | null;
+          run_id: string | null;
+          source_sha256: string | null;
+          source_size: number | null;
+          status: string;
+          total_pages: number | null;
+          updated_at: string;
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'document_processing_jobs';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      reserve_document_replacement: {
+        Args: {
+          p_file_name: string;
+          p_file_path: string;
+          p_target_document_id: string;
+          p_user_id: string;
+        };
+        Returns: {
+          completed_pages: number;
+          created_at: string;
+          document_id: string;
+          error_code: string | null;
+          file_name: string;
+          file_path: string;
+          generation: number;
+          id: string;
+          metadata: Json | null;
+          parser_job_id: string | null;
+          parser_submit_started_at: string | null;
+          run_id: string | null;
+          source_sha256: string | null;
+          source_size: number | null;
+          status: string;
+          total_pages: number | null;
+          updated_at: string;
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'document_processing_jobs';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      store_document_job_pages: {
+        Args: {
+          p_generation: number;
+          p_job_id: string;
+          p_pages: Json;
+          p_run_id: string;
+        };
+        Returns: boolean;
       };
     };
     Enums: {
