@@ -39,7 +39,7 @@ export const DOCUMENT_JOB_ERROR_MESSAGES: Record<JobErrorCode, string> = {
   parser_failed: 'Document parsing failed. You can resume processing.',
   parser_timeout: 'Document parsing timed out. You can resume processing.',
   parse_result_invalid:
-    'The parsed document could not be validated. You can resume processing.',
+    'The parsed document could not be validated. Upload a different valid, readable PDF.',
   metadata_failed:
     'Document metadata could not be prepared. You can resume processing.',
   indexing_failed: 'Document indexing failed. You can resume processing.',
