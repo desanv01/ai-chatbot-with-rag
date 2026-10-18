@@ -45,7 +45,8 @@
       "v1/durable-document-jobs": false,
       "v1/immutable-document-replacements": false,
       "v1/chat-empty-state-copy": false,
-      "v1/nonresumable-parser-results": false
+      "v1/nonresumable-parser-results": false,
+      "v1/schema-types-closeout": false
     }
   }
 }

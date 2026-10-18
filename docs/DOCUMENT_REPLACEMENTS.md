@@ -1,6 +1,8 @@
 # Immutable PDF replacements
 
-Replacement migration `20261016162416` is **UNAPPLIED**. CI and hosted acceptance remain **PENDING**. The prerequisite durable-jobs migration `20261016152540` is live. Main reviewed the implementation and passed 22 offline suites, lint, type checks, a placeholder build, isolated rollback SQL and both installed Workflow/Next localhost restart fixtures. These receipts do not establish hosted replacement completion.
+Status as of 18 October 2026: replacement migration source `20261016162416` was applied **ONCE** at 03:12 UTC, recorded under backend history version `20261018031259`. PR52 merged at `4411`; candidate and final-main CI passed. PR53 copy changes merged at `cf1832af1476902b3ea014ff20130734a0562ddd`, final-main CI39093081890 SUCCESS. The prerequisite durable-jobs migration `20261016152540` was already applied once and is live. Main reviewed the implementation and passed 22 offline suites, lint, type checks, a placeholder build, isolated rollback SQL and both installed Workflow/Next localhost restart fixtures. Actual hosted replacement acceptance remains **PENDING**.
+
+Main verified one protected Preview, `dpl_D6PHRbSqRr7fVZydtcs7HujKCd9z`, READY at exact `cf1832af1476902b3ea014ff20130734a0562ddd`, target NULL (Preview), with SSO retained, live=false and all automatic deployment guards false. Post-migration checks preserved the existing 11 documents and 135 vectors; new series, members and candidates remained empty. RLS was enabled on all three replacement tables; owner SELECT passed, client writes and reservation/promotion RPC access were denied, and service access passed. This establishes the checked migration/access scope, not an actual replacement promotion.
 
 ## Replacing a current PDF
 
@@ -33,4 +35,4 @@ npm run typecheck
 npm run build
 ```
 
-The SQL command emits an isolated rollback test. Local checks do not substitute for hosted evidence. Applying replacement migration `20261016162416`, final CI, hosted replacement/promotion, failure/cancellation preservation and old-citation checks remain **PENDING**. Do not claim hosted acceptance until main records those results.
+The SQL command emits an isolated rollback test. Migration application and the recorded candidate/final CI are complete; do not reapply the migration. Local checks and migration verification do not substitute for hosted replacement evidence. Actual promotion, cancellation/resume, preservation of the old active version after failure, old-citation checks, OCR and embedded-visual checks remain **PENDING**. Do not claim complete hosted acceptance until main records those results.
