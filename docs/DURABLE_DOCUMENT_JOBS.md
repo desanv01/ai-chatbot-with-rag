@@ -1,6 +1,8 @@
 # Durable document jobs
 
-Status at handback: **NOT LIVE; migration `20261016152540` UNAPPLIED; live acceptance gate PENDING.** Main reports local SQL rollback, native Workflow restart and offline checks passed. These are local receipts, not hosted acceptance. Main owns final review, CI and rollout. Providers remain unchanged; all automatic deployment guards remain false, with Preview-only scope and no Production settings changes.
+Status as of 18 October 2026: migration `20261016152540` was applied once and is **LIVE**. Main verified scoped hosted durable-job evidence below; remaining live gates are **PENDING**. Local SQL rollback, native Workflow restart and offline checks passed. PR52 merged at `4411` with candidate/final CI passed; PR53 copy changes merged at `cf1832af1476902b3ea014ff20130734a0562ddd`, final-main CI39093081890 SUCCESS. Main owns review, CI and rollout. Providers remain unchanged; all automatic deployment guards remain false, with Preview-only scope and no Production settings changes.
+
+One protected Preview, `dpl_D6PHRbSqRr7fVZydtcs7HujKCd9z`, is READY at exact `cf1832af1476902b3ea014ff20130734a0562ddd`, target NULL (Preview), with SSO retained and live=false. The earlier `64b82c4` Preview processed the synthetic Aurora upload to Ready across three physical pages after queue acknowledgement and leaving File Management. Reopening showed Ready 3 of 3. Vectors covered only physical pages 1 and 3, with 1,024 dimensions; the 2,743-byte source SHA matched. Cross-account document, vector, job and Storage access was denied, and temporary cached pages were cleared. One hosted Google/Voyage Malay answer returned the correct fixture code, Cobalt47Hana, Copper82Idris and Pearl not stated, with citations to physical pages 1 and 3. These source-bounded results are scoped evidence, not complete failure/resume or replacement acceptance.
 
 ## Upload, progress and reopening
 
@@ -33,4 +35,4 @@ npm run test:workflow-runtime
 
 The SQL command emits rollback SQL for an isolated database. The Workflow runtime command includes attachment and document localhost restart fixtures. Neither command establishes hosted behavior by itself.
 
-Migration `20261016152540` remains unapplied at this checkpoint. Hosted upload acknowledgement, close-browser continuation, persisted progress/reopening, failure/resume and cancellation behavior require the main-owned live gate before hosted acceptance can be recorded. Preserve existing data and original documents throughout review and rollout.
+Migration `20261016152540` is already applied; do not reapply it. Hosted acknowledgement followed by leaving File Management and reopening to Ready is verified for the Aurora fixture; this receipt does not establish a full browser-close case. Full close-browser continuation, cancellation/resume, failed-replacement preservation of the old active version, actual replacement promotion, old citations, OCR and embedded-visual checks remain **PENDING** under the main-owned live gate. Preserve existing data and original documents throughout review and rollout.
