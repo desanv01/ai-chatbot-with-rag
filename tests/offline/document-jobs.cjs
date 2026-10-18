@@ -235,6 +235,32 @@ async function main() {
   assert.equal(events.length, 0);
   reset();
   job.status = 'failed';
+  job.error_code = 'parse_result_invalid';
+  job.parser_job_id = 'saved-invalid-result';
+  job.parser_submit_started_at = 'started';
+  const invalidResult = await dal.getOwnedDocumentJob(owner, id);
+  assert.equal(invalidResult.canResume, false);
+  assert.match(invalidResult.message, /different valid, readable PDF/);
+  await assert.rejects(dal.controlDocumentJob(owner, id, 'resume'));
+  assert.deepEqual(events, [], 'Invalid immutable parser results must not dispatch another workflow');
+  for (const code of ['parser_timeout', 'metadata_failed', 'workflow_interrupted']) {
+    reset();
+    job.status = 'failed';
+    job.error_code = code;
+    job.parser_job_id = 'saved';
+    job.parser_submit_started_at = 'started';
+    assert.equal((await dal.getOwnedDocumentJob(owner, id)).canResume, true);
+    await dal.controlDocumentJob(owner, id, 'resume');
+    assert.deepEqual(events, ['maintenance', 'control_document_job', 'start']);
+  }
+  reset();
+  job.status = 'cancelled';
+  job.parser_job_id = 'saved';
+  job.parser_submit_started_at = 'started';
+  await dal.controlDocumentJob(owner, id, 'resume');
+  assert.deepEqual(events, ['maintenance', 'control_document_job', 'start']);
+  reset();
+  job.status = 'failed';
   job.parser_submit_started_at = 'started';
   await assert.rejects(dal.controlDocumentJob(owner, id, 'resume'));
   assert.equal(events.length, 0, 'unknown parser receipt resumed');

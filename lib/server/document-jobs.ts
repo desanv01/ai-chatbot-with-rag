@@ -135,7 +135,8 @@ function statusView(job: SafeJobRow): DocumentJobStatusView {
     canResume:
       (job.status === 'failed' || job.status === 'cancelled') &&
       job.error_code !== 'parser_submission_unknown' &&
-      job.error_code !== 'source_invalid',
+      job.error_code !== 'source_invalid' &&
+      job.error_code !== 'parse_result_invalid',
     canCancel: ['queued', 'parsing', 'metadata', 'indexing'].includes(
       job.status
     )
