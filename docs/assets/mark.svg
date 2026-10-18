@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">AI Chatbot with RAG</title>
+  <desc id="desc">An open document with a source marker on a dark square.</desc>
+  <rect width="128" height="128" rx="28" fill="#101c24"/>
+  <path d="M26 34h25c8 0 13 4 13 10v53c0-7-7-11-15-11H26V34Zm76 0H77c-8 0-13 4-13 10v53c0-7 7-11 15-11h23V34Z" fill="none" stroke="#e6f2ed" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M38 49h13M38 62h13M77 62h13M77 75h13" stroke="#9fb7b0" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="88" cy="37" r="15" fill="#5ee6b4"/>
+  <path d="m82 37 4 4 8-9" fill="none" stroke="#10271f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
