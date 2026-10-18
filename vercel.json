@@ -47,7 +47,8 @@
       "v1/chat-empty-state-copy": false,
       "v1/nonresumable-parser-results": false,
       "v1/schema-types-closeout": false,
-      "v1/canvas-pdf-preview": false
+      "v1/canvas-pdf-preview": false,
+      "v1/reliability-acceptance-docs": false
     }
   }
 }
